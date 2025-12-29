@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>醫學評量批次助手 v24.3.48</title>
+    <title>醫學評量批次助手 v24.3.49</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         :root { font-size: clamp(12px, 1.1vw, 15px); }
@@ -27,9 +26,7 @@
         .compare-table th { background-color: #f8fafc; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #e2e8f0; padding: 0.5rem; font-size: 0.8rem; font-weight: 900; text-align: center; }
         .compare-table td { padding: 6px 10px; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; vertical-align: top; word-break: break-all; overflow: hidden; }
         
-        .chart-card { background: white; border-radius: 2.5rem; padding: 2rem; box-shadow: 0 15px 35px -5px rgba(0,0,0,0.08); border: 1px solid #f1f5f9; position: relative; }
-        .download-btn { position: absolute; top: 1.5rem; right: 1.5rem; color: #cbd5e1; transition: all 0.2s; cursor: pointer; z-index: 200; }
-        .download-btn:hover { color: #e11d48; transform: scale(1.2); }
+        .chart-card { background: white; border-radius: 2.5rem; padding: 2.5rem; box-shadow: 0 15px 35px -5px rgba(0,0,0,0.08); border: 1px solid #f1f5f9; position: relative; transition: all 0.3s ease; }
         
         .filter-btn { 
             background-color: #f1f5f9; color: #64748b; border: 2px solid #e2e8f0; 
@@ -109,7 +106,8 @@
             </div>
             <div class="hidden flex-1 p-6 overflow-auto bg-white shadow-inner" id="compareContainer"></div>
             <div class="hidden flex-1 p-8 overflow-auto bg-slate-100" id="chartContainer">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8" id="chartGrid"></div>
+                <!-- 修改這裡：移除預設的 lg:grid-cols-2，改由 JS 動態控制 -->
+                <div class="grid grid-cols-1 gap-8" id="chartGrid"></div>
             </div>
         </div>
     </div>
@@ -142,7 +140,6 @@
             document.getElementById('sidebarBtnLabel').innerText = sb.classList.contains('expanded') ? '收合匯入區' : '開啟匯入區';
         }
 
-        // --- 核心：視圖切換 (修正看板空白邏輯) ---
         function switchView(mode) {
             const hCont = document.getElementById('historyContainer');
             const cCont = document.getElementById('compareContainer');
@@ -158,7 +155,6 @@
                 cCont.classList.remove('hidden'); document.getElementById('compareModeBtn').classList.add('mode-active'); generateCompareTables();
             } else if (mode === 'chart') {
                 chartCont.classList.remove('hidden'); document.getElementById('chartModeBtn').classList.add('mode-active');
-                // 關鍵修正：確保容器顯示後再繪圖
                 setTimeout(() => { generateExhibitionDashboard(); }, 100);
             }
         }
@@ -194,7 +190,6 @@
                 const textStream = raw.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s+/g, " ");
                 let item = { id: Math.random().toString(36).substr(2, 9), type: 'Unknown', title: (raw.match(/<title>(.*?)<\/title>/i)?.[1] || "未定義表單"), date: '1900-01-01', scoreRaw: '', skillName: '', feedbackGood: '', feedbackNeeds: '', studentFeedback: '', opaScores: { 1: '', 2: '', 3: '' }, opaFeedbacks: { 1: '', 2: '', 3: '' }, milestoneLevels: {}, details: [], studentName: '' };
                 
-                // 姓名抓取 (強化比對)
                 let nm = raw.match(/<strong>(.*?)<\/strong><\/h3>/) || raw.match(/loginAccountName\s*=\s*'(.*?)'/) || raw.match(/評量學員：<\/p>[\s\S]*?<strong>(.*?)<\/strong>/i);
                 item.studentName = nm ? nm[1].trim() : "未知學員";
                 
@@ -255,58 +250,81 @@
             } catch (e) { return null; }
         }
 
-        async function downloadChart(btn, title) {
-            const card = btn.closest('.chart-card');
-            btn.style.visibility = 'hidden';
-            const canvas = await html2canvas(card, { backgroundColor: "#ffffff", scale: 2 });
-            btn.style.visibility = 'visible';
-            const link = document.createElement('a');
-            link.download = `${title}.png`;
-            link.href = canvas.toDataURL('image/png', 1.0);
-            link.click();
-        }
-
+        // --- 核心修改：動態自適應看板 ---
         function generateExhibitionDashboard() {
-            const grid = document.getElementById('chartGrid'); grid.innerHTML = '';
+            const grid = document.getElementById('chartGrid'); 
+            grid.innerHTML = '';
             Object.values(charts).forEach(c => { if(c) c.destroy(); }); charts = {};
             if (historyData.length === 0) return;
+            
             const sorted = sortDataList([...historyData]).reverse();
             const studentName = historyData[0].studentName;
+            let chartConfigs = []; // 暫存所有要繪製的配置
 
+            // 1. Milestone 資料收集
             const msData = sorted.filter(d => d.type === 'Milestone');
             if (msData.length > 0 && (currentFilter === 'all' || currentFilter === 'Milestone')) {
                 const ds = msData.map((d, i) => ({ label: `日期: ${d.date}`, data: TARGET_MILESTONES.map(m => parseInt(d.milestoneLevels[m]) || 0), borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.1), borderWidth: 2 }));
-                createChart(`【${studentName}】MILESTONE 核心成長成長疊加`, 'radar', TARGET_MILESTONES.map(m => m.split('：')[1].substr(0,10)), ds, null, { r: { min: 0, max: 5, ticks: { stepSize: 1 } } });
+                chartConfigs.push({ title: `【${studentName}】MILESTONE 核心成長成長疊加`, type: 'radar', labels: TARGET_MILESTONES.map(m => m.split('：')[1].substr(0,10)), datasets: ds, options: { r: { min: 0, max: 5, ticks: { stepSize: 1 } } } });
             }
+
+            // 2. EPA 資料收集
             const epaData = sorted.filter(d => d.type === 'EPA');
             if (epaData.length > 0 && (currentFilter === 'all' || currentFilter === 'EPA')) {
                 const groups = {}; epaData.forEach(d => { const g = getSmartGroupName(d); if(!groups[g]) groups[g]=[]; groups[g].push(d); });
                 for(let k in groups) {
                     const ds = [1, 2, 3].map(i => ({ label: `OPA ${i}`, data: groups[k].map(d => (OPA_VALUE_MAP[d.opaScores[i]?.toUpperCase()] || 0) + (i * 0.1)), borderColor: CHART_COLORS[i-1], pointRadius: 6, borderWidth: 3, fill: false }));
-                    createChart(`【${studentName}】EPA 信賴趨勢 - ${k}`, 'line', groups[k].map(d => d.date), ds, null, { y: { min: 0, max: 8, ticks: { callback: v => OPA_LABEL_MAP[Math.round(v)] || '', font: { weight: 'bold' } } } });
+                    chartConfigs.push({ title: `【${studentName}】EPA 信賴趨勢 - ${k}`, type: 'line', labels: groups[k].map(d => d.date), datasets: ds, options: { y: { min: 0, max: 8, ticks: { callback: v => OPA_LABEL_MAP[Math.round(v)] || '', font: { weight: 'bold' } } } } });
                 }
             }
+
+            // 3. DOPS/Mini-CEX 資料收集
             const skillData = sorted.filter(d => d.type === 'DOPS' || d.type === 'Mini-CEX');
             if (skillData.length > 0) {
                 const groups = {}; skillData.forEach(d => { const g = getSmartGroupName(d); if(!groups[g]) groups[g]=[]; groups[g].push(d); });
                 for(let k in groups) {
                     if (currentFilter !== 'all' && !groups[k].some(d => d.type === currentFilter)) continue;
-                    createChart(`【${studentName}】${groups[k][0].type} 得分曲線 - ${k}`, 'line', groups[k].map(d => d.date), [{ label: '總分', data: groups[k].map(d => parseFloat(d.scoreRaw) || 0), borderColor: '#e11d48', tension: 0.1, fill: false, pointRadius: 6 }], null, { y: { min: 0, max: 100 } });
+                    chartConfigs.push({ title: `【${studentName}】${groups[k][0].type} 得分曲線 - ${k}`, type: 'line', labels: groups[k].map(d => d.date), datasets: [{ label: '總分', data: groups[k].map(d => parseFloat(d.scoreRaw) || 0), borderColor: '#e11d48', tension: 0.1, fill: false, pointRadius: 6 }], options: { y: { min: 0, max: 100 } } });
                 }
             }
+
+            // 關鍵修改：動態調整 Grid
+            if (chartConfigs.length === 1) {
+                grid.className = "grid grid-cols-1 gap-8 max-w-5xl mx-auto"; // 單張時置中且較寬
+            } else {
+                grid.className = "grid grid-cols-1 lg:grid-cols-2 gap-8"; // 多張時維持網格
+            }
+
+            // 執行繪製
+            chartConfigs.forEach(conf => {
+                createChart(conf.title, conf.type, conf.labels, conf.datasets, null, conf.options, chartConfigs.length === 1);
+            });
         }
 
-        function createChart(title, type, labels, dataOrDatasets, colors, scales) {
+        // 修改 createChart 增加標題置中與高度適應
+        function createChart(title, type, labels, datasets, colors, scales, isSingle) {
             const id = `chart_${Math.random().toString(36).substr(2, 9)}`;
-            const datasets = Array.isArray(dataOrDatasets[0]) || typeof dataOrDatasets[0] === 'object' ? dataOrDatasets : [{ data: dataOrDatasets, backgroundColor: colors }];
-            const card = document.createElement('div'); card.className = 'chart-card slide-up';
-            card.innerHTML = `<div class="download-btn" onclick="downloadChart(this, '${title}')"><i class="fas fa-camera text-xl"></i></div><h3 class="adaptive-title text-slate-800 mb-6 border-l-[12px] border-rose-500 pl-4 italic tracking-tighter font-black">${title}</h3><div class="h-[300px]"><canvas id="${id}"></canvas></div>`;
+            const card = document.createElement('div'); 
+            card.className = 'chart-card slide-up';
+            
+            // 標題置中修改: 移除 border-l 並加入 text-center
+            const heightClass = isSingle ? 'h-[500px]' : 'h-[350px]'; // 單張圖時高度自動增加
+            card.innerHTML = `<h3 class="adaptive-title text-slate-800 mb-8 text-center italic tracking-tighter font-black w-full">${title}</h3><div class="${heightClass}"><canvas id="${id}"></canvas></div>`;
+            
             document.getElementById('chartGrid').appendChild(card);
             const ctx = document.getElementById(id).getContext('2d');
-            charts[id] = new Chart(ctx, { type, data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: scales || {} } });
+            charts[id] = new Chart(ctx, { 
+                type, 
+                data: { labels, datasets }, 
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { position: 'bottom', labels: { font: { weight: 'bold' } } } }, 
+                    scales: scales || {} 
+                } 
+            });
         }
 
-        // --- 匯入區與基本 ---
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => { dropZone.addEventListener(e, (evt) => { evt.preventDefault(); evt.stopPropagation(); }, false); });
@@ -336,6 +354,7 @@
                     </div></div>`).join('');
         }
 
+        // --- 互比模式（保持不動） ---
         function generateCompareTables() {
             const container = document.getElementById('compareContainer'); container.innerHTML = "";
             const sorted = sortDataList([...historyData]); if (sorted.length === 0) return;
