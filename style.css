@@ -127,10 +127,11 @@ body {
 }
 
 .mode-active {
-    border-bottom: 4px solid #0f766e !important;
-    /* background-color: rgba(255, 255, 255, 0.15) !important; Removed to use button's bg */
-    transform: scale(1.05);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    /* border-bottom: 4px solid #0f766e !important; Removed for better aesthetics */
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    filter: brightness(1.1);
+    z-index: 50;
 }
 
 .slide-up {
