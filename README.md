@@ -1,9 +1,9 @@
-# 評量展示助手 v01 (Refactored)
+# 評量展示助手 v1.0 (Refactored)
 
 > 輔仁大學附設醫院 | 醫學教育評量資料視覺化展示工具
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-v01-green.svg)
+![Version](https://img.shields.io/badge/version-v1.0-green.svg)
 
 ## 📋 專案簡介
 
@@ -30,7 +30,7 @@
 - **🖨️ 友善列印**：專為 A4 橫式列印優化的 CSS 設定，適合產出紙本成果報告。
 - **🔒 資料隱私**：採純前端架構 (No-Server)，所有資料運算皆在瀏覽器本地完成，確保機敏資料不外流。
 
-## 🚀 檔案結構 (v01 重構版)
+## 🚀 檔案結構 (v1.0 重構版)
 
 本專案已採用現代化模組設計，易於維護：
 

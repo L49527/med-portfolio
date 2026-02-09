@@ -623,7 +623,7 @@ function printAccreditationReport() {
             chartGrid.parentNode.appendChild(printFooter);
         }
         printFooter.innerHTML = `
-            <p>評量展示助手 v01 產出 | 教學醫院評鑑用成果展示 | 列印時間：${new Date().toLocaleString('zh-TW')}</p>
+            <p>評量展示助手 v1.0 產出 | 教學醫院評鑑用成果展示 | 列印時間：${new Date().toLocaleString('zh-TW')}</p>
         `;
 
         // Trigger print
