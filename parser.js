@@ -1,5 +1,5 @@
 /* Data Constants */
-const TARGET_MILESTONES = ["一、醫學影像及放射科學知識 1：放射診斷造影相關知識能力", "一、醫學影像及放射科學知識 2：儀器品保與輻射安全", "二、醫病關係及團隊溝通能力 1：與其他專業團隊之有效溝通", "二、醫病關係及團隊溝通能力 2：與病人及陪同者之妥善溝通", "三、病人照護 1：放射診斷造影技術", "三、病人照護 2：儀器設備異常狀況處理", "三、病人照護 3：病人安全", "三、病人照護 4：任務交接", "三、病人照護 5：跨領域團隊合作照護", "四、提升本職技能 1： 提升本職技能", "五、專業素養 1：專業價值", "五、專業素養 2：責任擔當"];
+const TARGET_MILESTONES = ["一、醫學影像及放射科學知識 1", "一、醫學影像及放射科學知識 2", "二、醫病關係及團隊溝通能力 1", "二、醫病關係及團隊溝通能力 2", "三、病人照護 1", "三、病人照護 2", "三、病人照護 3", "三、病人照護 4", "三、病人照護 5", "四、提升本職技能 1", "五、專業素養 1", "五、專業素養 2"];
 const CORE_COMPETENCIES = ["醫學影像知識", "團隊溝通能力", "病人照護核心", "本職技能提升", "專業素養表現"];
 const CORE_MAP = { "醫學影像知識": [0, 1], "團隊溝通能力": [2, 3], "病人照護核心": [4, 5, 6, 7, 8], "本職技能提升": [9], "專業素養表現": [10, 11] };
 const OPA_VALUE_MAP = { 'N/A': 0, '1': 1, '2A': 2, '2B': 3, '3A': 4, '3B': 5, '3C': 6, '4': 7, '5': 8 };
@@ -14,9 +14,17 @@ function hexToRgba(hex, alpha) {
 
 function getSmartGroupName(item) {
     const title = item.title;
-    const keywords = ["頭頸部", "胸腹部", "胸部", "腹部", "CTA", "Dynamic", "學前", "學中", "學後", "四肢部", "脊椎部", "Pancreas", "Liver"];
+    // 移除學前/學中/學後，只保留真實部位相關的詞彙
+    const keywords = ["頭頸部", "胸腹部", "胸部", "腹部", "CTA", "Dynamic", "四肢部", "脊椎部", "Pancreas", "Liver"];
     for (let key of keywords) { if (title.includes(key)) return key; }
-    return title.replace(/^(DOPS|Mini-CEX|CEX|CbD|EPA|Milestone)[-\s:_/]+/i, '').trim().split(/[-_\s/]/)[0] || "其他項目";
+
+    // 如果找不到指定的 keyword，那就嘗試從標題濾掉表單類型名稱後，取剩餘有意義的部位
+    // 同時過濾掉「學前/學中/學後/訓練」這類干擾字
+    let cleanTitle = title.replace(/^(DOPS|Mini-CEX|CEX|CbD|EPA|Milestone)[-\s:_/]+/i, '')
+        .replace(/學前|測驗|學中|學後|評量|訓練/g, '')
+        .trim();
+
+    return cleanTitle.split(/[-_\s/]/)[0] || "其他項目";
 }
 
 function getGradeStyle(val) {
@@ -194,6 +202,29 @@ function analyzeCSV(content) {
                     else if (upTitle.includes('MILESTONE') || upTitle.includes('里程碑')) type = 'Milestone';
                 }
 
+                // 為了修復 EPA 等報表有時候匯出的欄位沒抓到對的儀器，我們再次統一針對 Instrument 做分析
+                // 優先使用「儀器別」，若無，再看「訓練別編號」，若都無，如果是 EPA，就用 getSmartGroupName 猜一個。
+                let instRaw = getValue("儀器別") || getValue("訓練別編號") || getValue("科別") || "";
+
+                // --- 特別修復 ---
+                // E-Portfolio 的導出工具預設會把 EPA 的儀器別全部填上「放射治療」！必須在這裡將其洗掉
+                if (type === 'EPA' && instRaw.includes('放射治療')) {
+                    const t = title;
+                    if (t.includes('電腦斷層')) instRaw = 'CT';
+                    else if (t.includes('血管攝影')) instRaw = 'Angio';
+                    else if (t.includes('磁振造影')) instRaw = 'MRI';
+                    else if (t.includes('一般診斷')) instRaw = '一般診斷攝影';
+                    else if (t.includes('透視') || t.includes('特殊')) instRaw = 'Special';
+                    else if (t.includes('超音波')) instRaw = 'Sono';
+                    else if (t.includes('核子醫學')) instRaw = 'NM';
+                    else instRaw = '';
+                }
+
+                // 對於 EPA 或 DOPS，如果還是空的，試著從標題猜
+                if ((!instRaw || instRaw === "無" || instRaw === "未分類") && (type === 'EPA' || type === 'DOPS')) {
+                    instRaw = getSmartGroupName({ title: title }); // 借用這個函數切出最前面那一塊
+                }
+
 
                 let item = {
                     id: Math.random().toString(36).substr(2, 9),
@@ -210,7 +241,7 @@ function analyzeCSV(content) {
                     studentFeedback: getValue("學員回饋意見") || getValue("評語/心得") || '',
                     teacherName: getValue("教師/主持人") || '未註明',
                     trainingType: getValue("訓練別編號") || getValue("科別") || '未分類',
-                    instrumentType: getValue("儀器別") || '',
+                    instrumentType: instRaw || '',
                     stationDetails: getValue("各站成績") || '', // 新增：支援 v5.1 各站成績 (基礎課程細項)
                     milestoneLevels: {},
                     details: []

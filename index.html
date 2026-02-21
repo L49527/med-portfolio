@@ -27,7 +27,7 @@
             <img src="logo.png" alt="輔大醫院" class="h-20">
             <div>
                 <h1 class="text-lg font-black text-slate-800 leading-tight">輔仁大學附設醫院 <span
-                        class="text-teal-600">評量展示助手</span> <span class="text-teal-500 text-sm">v1.0</span>
+                        class="text-teal-600">評量展示助手</span>
                 </h1>
                 <p class="text-[10px] text-slate-500 italic tracking-widest uppercase">Fu Jen Catholic University
                     Hospital | Medical Education Assessment</p>
@@ -120,49 +120,64 @@
             <div class="hidden flex-1 flex flex-col overflow-hidden bg-slate-100" id="chartContainer">
                 <!-- Item Selector Panel -->
                 <div id="chartSelectorPanel"
-                    class="bg-white border-b border-slate-200 px-6 py-4 shadow-sm flex-none print-hide">
-                    <div class="flex items-center justify-between mb-3">
+                    class="bg-white border-b border-slate-200 shadow-sm flex-none print-hide rounded-b-xl max-w-5xl mx-auto w-full transition-all">
+                    <!-- Collapse Toggle Header -->
+                    <button onclick="toggleChartSelector()"
+                        class="w-full flex items-center justify-between px-6 py-3 hover:bg-slate-50 transition-colors border-b border-slate-100 group">
                         <h3 class="text-sm font-black text-slate-700 flex items-center gap-2">
                             <i class="fas fa-check-double text-indigo-500"></i>
                             選擇要納入成果展的評量項目
                         </h3>
-                        <div class="flex gap-2">
-                            <button onclick="selectAllChartItems(true)"
-                                class="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1 rounded-lg font-bold transition">全選</button>
-                            <button onclick="selectAllChartItems(false)"
-                                class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1 rounded-lg font-bold transition">全不選</button>
+                        <div class="flex items-center gap-3">
+                            <span
+                                class="text-xs text-slate-400 font-bold group-hover:text-indigo-500 transition-colors">展開
+                                / 收合</span>
+                            <i id="chartSelectorIcon"
+                                class="fas fa-chevron-down text-slate-400 transition-transform duration-300"></i>
                         </div>
-                    </div>
-                    <!-- Quick Filters Row -->
-                    <div class="flex flex-wrap gap-4 mb-3 pb-3 border-b border-slate-100">
-                        <!-- Instrument Filter -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold text-slate-500"><i
-                                    class="fas fa-microscope mr-1"></i>儀器別：</span>
-                            <div id="instrumentFilterBtns" class="flex flex-wrap gap-1">
-                                <!-- Dynamic instrument buttons -->
+                    </button>
+                    <!-- Expandable Content -->
+                    <div id="chartSelectorContent" class="px-6 py-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex gap-2">
+                                <button onclick="selectAllChartItems(true)"
+                                    class="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1 rounded-lg font-bold transition">全選</button>
+                                <button onclick="selectAllChartItems(false)"
+                                    class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1 rounded-lg font-bold transition">全不選</button>
                             </div>
                         </div>
-                        <!-- Type Filter -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold text-slate-500"><i class="fas fa-tags mr-1"></i>類型：</span>
-                            <div id="typeFilterBtns" class="flex flex-wrap gap-1">
-                                <!-- Dynamic type buttons -->
+                        <!-- Quick Filters Row -->
+                        <div class="flex flex-wrap gap-4 mb-3 pb-3 border-b border-slate-100">
+                            <!-- Instrument Filter -->
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-slate-500"><i
+                                        class="fas fa-microscope mr-1"></i>儀器別：</span>
+                                <div id="instrumentFilterBtns" class="flex flex-wrap gap-1">
+                                    <!-- Dynamic instrument buttons -->
+                                </div>
+                            </div>
+                            <!-- Type Filter -->
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-slate-500"><i
+                                        class="fas fa-tags mr-1"></i>類型：</span>
+                                <div id="typeFilterBtns" class="flex flex-wrap gap-1">
+                                    <!-- Dynamic type buttons -->
+                                </div>
+                            </div>
+                            <!-- Student Filter -->
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-slate-500"><i
+                                        class="fas fa-user-graduate mr-1"></i>學員：</span>
+                                <div id="studentFilterBtns" class="flex flex-wrap gap-1">
+                                    <!-- Dynamic student buttons -->
+                                </div>
                             </div>
                         </div>
-                        <!-- Student Filter -->
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-bold text-slate-500"><i
-                                    class="fas fa-user-graduate mr-1"></i>學員：</span>
-                            <div id="studentFilterBtns" class="flex flex-wrap gap-1">
-                                <!-- Dynamic student buttons -->
-                            </div>
+                        <div id="chartItemSelector"
+                            class="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
+                            <!-- Items will be populated dynamically -->
+                            <div class="text-slate-400 text-sm italic">請先匯入評量資料</div>
                         </div>
-                    </div>
-                    <div id="chartItemSelector"
-                        class="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
-                        <!-- Items will be populated dynamically -->
-                        <div class="text-slate-400 text-sm italic">請先匯入評量資料</div>
                     </div>
                 </div>
                 <!-- Chart Grid -->

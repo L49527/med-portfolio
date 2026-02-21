@@ -18,6 +18,20 @@ function toggleSidebar() {
     document.getElementById('sidebarBtnLabel').innerText = sb.classList.contains('expanded') ? '收合匯入區' : '開啟匯入區';
 }
 
+function toggleChartSelector() {
+    const content = document.getElementById('chartSelectorContent');
+    const icon = document.getElementById('chartSelectorIcon');
+    if (!content || !icon) return;
+
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        icon.classList.remove('-rotate-90');
+    } else {
+        content.classList.add('hidden');
+        icon.classList.add('-rotate-90');
+    }
+}
+
 function switchView(mode) {
     if (isAdminMode) toggleAdminMode(); // Force exit admin
     const hCont = document.getElementById('historyContainer');
@@ -285,7 +299,9 @@ function generateExhibitionDashboard() {
     });
 
     Object.keys(studentGroups).sort().forEach(sName => {
-        const sData = sortDataList([...studentGroups[sName]]);
+        // 強制依日期從舊到新排序，確保成長曲線與第幾次順序合理
+        const sData = [...studentGroups[sName]].sort((a, b) => a.date.localeCompare(b.date));
+
         // 1. Milestone (按學員區分)
         const msData = sData.filter(d => d.type === 'Milestone');
         if (msData.length > 0) {
@@ -295,27 +311,162 @@ function generateExhibitionDashboard() {
                     return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : 0;
                 };
                 const coreValues = [getAvg(CORE_MAP["醫學影像知識"]), getAvg(CORE_MAP["團隊溝通能力"]), getAvg(CORE_MAP["病人照護核心"]), parseFloat(d.milestoneLevels[TARGET_MILESTONES[9]]) || 0, getAvg(CORE_MAP["專業素養表現"])];
-                return { label: `日期: ${d.date}`, data: coreValues, borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.15), borderWidth: 2.5 };
+                return { label: `第 ${i + 1} 次`, data: coreValues, borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.15), borderWidth: 2.5 };
             });
             createChart(`【${sName}】MILESTONE 核心能力成長分析`, 'radar', CORE_COMPETENCIES, ds, { r: { min: 0, max: 5, ticks: { stepSize: 1 } } });
         }
-        // 2. EPA (按學員+部位區分)
+
+        // 2. EPA (各儀器每次的比較)
         const epaData = sData.filter(d => d.type === 'EPA');
         if (epaData.length > 0) {
-            const pg = {}; epaData.forEach(d => { const g = getSmartGroupName(d); if (!pg[g]) pg[g] = []; pg[g].push(d); });
-            for (let k in pg) {
-                const ds = pg[k].map((d, i) => ({ label: `日期: ${d.date}`, data: [1, 2, 3].map(i => OPA_VALUE_MAP[d.opaScores[i]?.toUpperCase()] || 0), borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.1), borderWidth: 2 }));
-                createChart(`【${sName}】EPA 信賴能力分析 (Radar) - ${k}`, 'radar', ["OPA 1", "OPA 2", "OPA 3"], ds, { r: { min: 0, max: 8, ticks: { callback: v => OPA_LABEL_MAP[Math.round(v)] || '', font: { weight: 'bold' } } } });
+            const instGroups = {};
+            epaData.forEach(d => {
+                const g = d.instrumentType || '未指定儀器';
+                if (!instGroups[g]) instGroups[g] = [];
+                instGroups[g].push(d);
+            });
+
+            // 2a. 依據各儀器繪製每次成績的雷達圖
+            for (let k in instGroups) {
+                const ds = instGroups[k].map((d, i) => ({
+                    label: `第 ${i + 1} 次`,
+                    data: [1, 2, 3].map(j => OPA_VALUE_MAP[d.opaScores[j]?.toUpperCase()] || 0),
+                    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                    backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.1),
+                    borderWidth: 2
+                }));
+                createChart(`【${sName}】EPA 信賴能力分析 (各次對比) - ${k}`, 'radar', ["OPA 1", "OPA 2", "OPA 3"], ds, { r: { min: 0, max: 8, ticks: { callback: v => OPA_LABEL_MAP[Math.round(v)] || '', font: { weight: 'bold' } } } });
+            }
+
+            // 2b. 總 EPA 成績儀器互比 (取各儀器最後一次成績)
+            const latestEpaPerInst = Object.keys(instGroups).map(inst => {
+                // instGroups[inst] is sorted oldest to newest, so the last element is the latest
+                return {
+                    instName: inst,
+                    latestData: instGroups[inst][instGroups[inst].length - 1]
+                };
+            });
+
+            if (latestEpaPerInst.length > 0) {
+                const ds = latestEpaPerInst.map((item, i) => ({
+                    label: item.instName,
+                    data: [1, 2, 3].map(j => OPA_VALUE_MAP[item.latestData.opaScores[j]?.toUpperCase()] || 0),
+                    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                    backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.15),
+                    borderWidth: 2.5
+                }));
+                createChart(`【${sName}】總 EPA 信賴能力 (儀器最終成績互比)`, 'radar', ["OPA 1", "OPA 2", "OPA 3"], ds, { r: { min: 0, max: 8, ticks: { callback: v => OPA_LABEL_MAP[Math.round(v)] || '', font: { weight: 'bold' } } } });
             }
         }
-        // 3. DOPS/Mini-CEX (按學員+部位區分)
-        const skillData = sData.filter(d => ['DOPS', 'Mini-CEX', 'CbD', '實習總評量表'].includes(d.type));
-        if (skillData.length > 0) {
-            const pg = {}; skillData.forEach(d => { const g = getSmartGroupName(d); if (!pg[g]) pg[g] = []; pg[g].push(d); });
-            for (let k in pg) {
-                createChart(`【${sName}】${pg[k][0].type} 成長曲線 - ${k}`, 'line', pg[k].map(d => d.date), [{ label: '總分', data: pg[k].map(d => parseFloat(d.scoreRaw) || 0), borderColor: '#e11d48', tension: 0.1, fill: false, pointRadius: 6 }], { y: { min: 60, max: 100 } });
+
+        // 3. DOPS (按學員+儀器區分，儀器內的部位互比)
+        const dopsData = sData.filter(d => d.type === 'DOPS');
+        if (dopsData.length > 0) {
+            const instGroups = {};
+            dopsData.forEach(d => {
+                const inst = d.instrumentType || '未分類儀器';
+                if (!instGroups[inst]) instGroups[inst] = [];
+                instGroups[inst].push(d);
+            });
+            for (let inst in instGroups) {
+                const instData = instGroups[inst];
+                const partGroups = {};
+                instData.forEach(d => {
+                    const part = getSmartGroupName(d);
+                    // 為了避免折線圖出現「其他項目」這種無意義的孤立點，若是其他項目則略過不過濾畫線
+                    if (part === "其他項目") return;
+
+                    if (!partGroups[part]) partGroups[part] = [];
+                    partGroups[part].push(d);
+                });
+
+                // 只有當該儀器底下有大於等於一個明確的部位需要畫線時才產生圖表
+                if (Object.keys(partGroups).length > 0) {
+                    const maxLen = Math.max(...Object.values(partGroups).map(arr => arr.length));
+                    const labels = Array.from({ length: maxLen }, (_, i) => `第 ${i + 1} 次`);
+
+                    const datasets = Object.keys(partGroups).map((part, i) => ({
+                        label: part,
+                        data: partGroups[part].map(d => parseFloat(d.scoreRaw) || 0),
+                        borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                        tension: 0.1, fill: false, pointRadius: 6
+                    }));
+                    createChart(`【${sName}】DOPS 成長曲線 - ${inst} (部位互比)`, 'line', labels, datasets, { y: { min: 60, max: 100 } });
+                }
             }
         }
+
+        // 4. 其他項目 (Mini-CEX, CbD, 實習總評量表) (按學員+表單類型區分，儀器互比)
+        const otherSkillTypes = ['Mini-CEX', 'CbD', '實習總評量表'];
+        otherSkillTypes.forEach(type => {
+            const skillData = sData.filter(d => d.type === type);
+            if (skillData.length > 0) {
+                const instGroups = {};
+                skillData.forEach(d => {
+                    const inst = d.instrumentType || '未分類儀器';
+                    if (!instGroups[inst]) instGroups[inst] = [];
+                    instGroups[inst].push(d);
+                });
+                const maxLen = Math.max(...Object.values(instGroups).map(arr => arr.length));
+                const labels = Array.from({ length: maxLen }, (_, i) => `第 ${i + 1} 次`);
+
+                const datasets = Object.keys(instGroups).map((inst, i) => ({
+                    label: inst,
+                    data: instGroups[inst].map(d => parseFloat(d.scoreRaw) || 0),
+                    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                    tension: 0.1, fill: false, pointRadius: 6
+                }));
+                createChart(`【${sName}】${type} 成長曲線 (儀器互比)`, 'line', labels, datasets, { y: { min: 60, max: 100 } });
+            }
+        });
+
+        // 5. 學前/學後 階段對比 (按評量類型分別做儀器互比)
+        // 只抓有「學前」或「學後」標記的表單（學中已有部位/儀器內部對比）
+        const stageTypes = ['DOPS', 'Mini-CEX', 'CbD', '實習總評量表'];
+        stageTypes.forEach(stageType => {
+            const stageData = sData.filter(d => d.type === stageType && (d.title.includes('學前') || d.title.includes('學後')));
+            if (stageData.length === 0) return;
+
+            // 按儀器分組，每個儀器算出學前平均、學後平均
+            const instStageMap = {};
+            let hasPre = false, hasPost = false;
+
+            stageData.forEach(d => {
+                const inst = d.instrumentType || '未分類儀器';
+                if (!instStageMap[inst]) instStageMap[inst] = { preScores: [], postScores: [] };
+
+                const score = parseFloat(d.scoreRaw);
+                if (!isNaN(score)) {
+                    if (d.title.includes('學前')) { instStageMap[inst].preScores.push(score); hasPre = true; }
+                    else if (d.title.includes('學後')) { instStageMap[inst].postScores.push(score); hasPost = true; }
+                }
+            });
+
+            const stages = [];
+            if (hasPre) stages.push('學前');
+            if (hasPost) stages.push('學後');
+
+            if (stages.length > 0) {
+                const instruments = Object.keys(instStageMap);
+                const datasets = instruments.map((inst, i) => {
+                    const avg = arr => arr.length ? parseFloat((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null;
+                    const data = [];
+                    if (hasPre) data.push(avg(instStageMap[inst].preScores));
+                    if (hasPost) data.push(avg(instStageMap[inst].postScores));
+
+                    return {
+                        label: inst,
+                        data: data,
+                        backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                        borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                        borderWidth: 1,
+                        borderRadius: 4
+                    };
+                });
+
+                createChart(`【${sName}】${stageType} 學前 / 學後 階段對比 (儀器互比)`, 'bar', stages, datasets, { y: { min: 60, max: 100 } });
+            }
+        });
     });
     const chartCards = grid.querySelectorAll('.chart-card');
     grid.className = (chartCards.length === 1) ? "grid grid-cols-1 gap-8" : "grid grid-cols-1 lg:grid-cols-2 gap-8";
@@ -439,7 +590,7 @@ function selectAllChartItems(selectAll) {
 function createChart(title, type, labels, datasets, scales) {
     const id = `chart_${Math.random().toString(36).substr(2, 9)}`;
     const card = document.createElement('div'); card.className = 'chart-card slide-up';
-    card.innerHTML = `<h3 class="adaptive-title text-slate-800 mb-8 text-center font-black tracking-tighter">${title}</h3><div class="h-[380px] w-full"><canvas id="${id}"></canvas></div>`;
+    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-8 text-center font-black tracking-tighter">${title}</h3><div class="chart-canvas-wrap w-full"><canvas id="${id}"></canvas></div></div>`;
     document.getElementById('chartGrid').appendChild(card);
     const ctx = document.getElementById(id).getContext('2d');
     charts[id] = new Chart(ctx, {
@@ -452,7 +603,8 @@ function createChart(title, type, labels, datasets, scales) {
             plugins: {
                 legend: {
                     position: 'bottom',
-                    labels: { font: { size: 12, weight: 'bold' }, padding: 15 }
+                    labels: { font: { size: 8, weight: 'bold' }, padding: 6, boxWidth: 8 },
+                    maxHeight: 40
                 }
             },
             scales: scales ? Object.fromEntries(
@@ -557,7 +709,7 @@ async function handleFiles(files) {
             const result = analyzeCSV(text);
             if (result) { if (Array.isArray(result)) historyData.push(...result); else historyData.push(result); }
         }
-    } catch (e) { }
+    } catch (e) { console.error('匯入錯誤:', e); alert('匯入時發生錯誤: ' + e.message); }
     document.getElementById('progressOverlay').classList.add('hidden');
     updateFilterOptions();
     switchView('card');
@@ -601,32 +753,58 @@ function printAccreditationReport() {
         const studentNames = students.join('、') || '未知學員';
         const printDate = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
 
-        // Create print header
-        let printHeader = document.querySelector('.print-header');
-        if (!printHeader) {
-            printHeader = document.createElement('div');
-            printHeader.className = 'print-header';
-            chartGrid.parentNode.insertBefore(printHeader, chartGrid);
-        }
-        printHeader.innerHTML = `
-            <h1>醫學教育成果展示報告</h1>
-            <p>受評學員：${studentNames}</p>
-            <p>列印日期：${printDate}</p>
-            <p style="font-size: 9pt; margin-top: 8px;">本報告依據教學醫院評鑑基準產出，呈現學員能力成長軌跡</p>
-        `;
+        // 移除舊的 header / footer（避免重複）
+        document.querySelectorAll('.print-header, .print-footer').forEach(el => el.remove());
 
-        // Create print footer
-        let printFooter = document.querySelector('.print-footer');
-        if (!printFooter) {
-            printFooter = document.createElement('div');
-            printFooter.className = 'print-footer';
-            chartGrid.parentNode.appendChild(printFooter);
-        }
-        printFooter.innerHTML = `
-            <p>評量展示助手 v1.0 產出 | 教學醫院評鑑用成果展示 | 列印時間：${new Date().toLocaleString('zh-TW')}</p>
+        // 將封面頁插入 chartGrid 內作為第一個子元素
+        const printHeader = document.createElement('div');
+        printHeader.className = 'print-header chart-card';
+        printHeader.innerHTML = `
+            <div class="print-header-inner">
+                <h1>醫學教育成果展示報告</h1>
+                <p>受評學員：${studentNames}</p>
+                <p>列印日期：${printDate}</p>
+                <p class="print-sub">本報告依據教學醫院評鑑基準產出，呈現學員能力成長軌跡</p>
+                <p class="print-sub">評量展示助手 產出 | 列印時間：${new Date().toLocaleString('zh-TW')}</p>
+            </div>
         `;
+        chartGrid.insertBefore(printHeader, chartGrid.firstChild);
+
+        // === 核彈級做法：把 chartGrid 搬到 body 下面，隱藏其他所有東西 ===
+        const originalParent = chartGrid.parentElement;
+        const originalNext = chartGrid.nextSibling;
+
+        // 隱藏 body 下所有直接子元素
+        const bodyChildren = [...document.body.children];
+        bodyChildren.forEach(el => { el.dataset.printHidden = el.style.display; el.style.display = 'none'; });
+
+        // 建立一個乾淨的列印容器，直接放到 body
+        const printContainer = document.createElement('div');
+        printContainer.id = 'printContainer';
+        printContainer.style.cssText = 'display:block;width:100%;margin:0;padding:0;background:white;';
+        printContainer.appendChild(chartGrid);
+        document.body.appendChild(printContainer);
+
+        // 列印完畢後還原
+        window.onafterprint = () => {
+            // 把 chartGrid 搬回原本的位置
+            if (originalNext) {
+                originalParent.insertBefore(chartGrid, originalNext);
+            } else {
+                originalParent.appendChild(chartGrid);
+            }
+            // 移除列印容器
+            printContainer.remove();
+            // 還原 body 子元素
+            bodyChildren.forEach(el => {
+                el.style.display = el.dataset.printHidden || '';
+                delete el.dataset.printHidden;
+            });
+            window.onafterprint = null;
+        };
 
         // Trigger print
         window.print();
     }, 500);
 }
+

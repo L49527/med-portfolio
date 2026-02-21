@@ -212,100 +212,163 @@ body {
 
 /* Print Mode Styles for Accreditation */
 @media print {
-    body {
-        background: white !important;
-        overflow: visible !important;
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
     }
 
+    /* 列印時只顯示 #printContainer，隱藏 body 下所有其他元素 */
+    body>*:not(#printContainer) {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        overflow: hidden !important;
+    }
+
+    /* 額外保險：明確隱藏所有非列印區域的 UI */
     header,
     #sidebar,
-    .filter-btn,
+    #appContainer,
+    #chartSelectorPanel,
     #adminDashboard,
     #progressOverlay,
-    #emptyState {
+    #emptyState,
+    .print-hide {
         display: none !important;
     }
 
-    #appContainer {
-        display: block !important;
+    body {
+        background: white !important;
+        margin: 0 !important;
+        padding: 0 !important;
         overflow: visible !important;
     }
 
-    #historyContainer,
-    #compareContainer {
-        display: none !important;
-    }
-
-    #chartContainer {
+    /* printContainer 是 JS 動態建立的列印專用容器 */
+    #printContainer {
         display: block !important;
-        overflow: visible !important;
+        width: 100% !important;
+        margin: 0 !important;
         padding: 0 !important;
         background: white !important;
     }
 
+    #printContainer #chartGrid {
+        display: block !important;
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        gap: 0 !important;
+    }
+
+    /* 每張圖一頁、置中、填滿 */
     .chart-card {
-        page-break-inside: avoid;
-        margin-bottom: 30px !important;
+        page-break-inside: avoid !important;
+        page-break-after: always !important;
         box-shadow: none !important;
-        border: 2px solid #333 !important;
-        border-radius: 12px !important;
-        padding: 20px !important;
+        border: none !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        box-sizing: border-box !important;
+        background: white !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
+    }
+
+    /* 最後一張圖不需要 page-break-after */
+    .chart-card:last-of-type {
+        page-break-after: auto !important;
+    }
+
+    /* 確保標題與圖表垂直居中 wrapper — 佔盡可能大的版面 */
+    .chart-card-inner {
+        width: 95% !important;
+        height: 95% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
     }
 
     .chart-card h3 {
-        font-size: 14pt !important;
-        margin-bottom: 15px !important;
-        color: #000 !important;
-    }
-
-    #chartGrid {
+        font-size: 24pt !important;
+        font-weight: 900 !important;
+        margin: 0 0 4px 0 !important;
+        color: #1a1a1a !important;
+        text-align: center !important;
+        line-height: 1.2 !important;
         display: block !important;
+        flex-shrink: 0 !important;
     }
 
-    #chartGrid>.chart-card {
+    /* 讓圖表放大填滿可用區域 - 使用具體 vh 單位強制高度，避免列印時 flex 失效 */
+    .chart-canvas-wrap {
+        height: 90vh !important;
         width: 100% !important;
-        max-width: 100% !important;
+        position: relative !important;
+        display: block !important;
+        margin: 0 auto !important;
     }
 
     canvas {
-        max-height: 400px !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: 100% !important;
+        max-height: 100% !important;
+        display: block !important;
+        margin: 0 auto !important;
+        object-fit: contain !important;
     }
 
     @page {
         size: A4 landscape;
-        margin: 15mm;
+        margin: 0mm;
+        /* 設定為 0mm 交由 CSS 內部控制 padding，避免排版跑位 */
     }
 
-    .print-header {
-        display: block !important;
-        text-align: center;
-        margin-bottom: 20px;
-        padding-bottom: 15px;
-        border-bottom: 3px solid #333;
+    /* 封面頁 (也是一種 chart-card) — 必須顯示並徹底置中 */
+    .print-header.chart-card {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        page-break-after: always !important;
+        height: 100vh !important;
+        width: 100% !important;
+    }
+
+    .print-header-inner {
+        text-align: center !important;
+        width: 100% !important;
     }
 
     .print-header h1 {
-        font-size: 18pt;
-        font-weight: bold;
-        margin-bottom: 5px;
+        font-size: 48pt !important;
+        font-weight: 900 !important;
+        margin: 0 0 30px 0 !important;
+        color: #111 !important;
     }
 
     .print-header p {
-        font-size: 10pt;
-        color: #666;
+        font-size: 22pt !important;
+        color: #333 !important;
+        margin: 12px 0 !important;
+        line-height: 1.5 !important;
+    }
+
+    .print-header .print-sub {
+        font-size: 14pt !important;
+        color: #666 !important;
+        margin-top: 40px !important;
     }
 
     .print-footer {
-        display: block !important;
-        text-align: center;
-        margin-top: 20px;
-        padding-top: 10px;
-        border-top: 1px solid #ccc;
-        font-size: 9pt;
-        color: #666;
-    }
-
-    .print-hide {
         display: none !important;
     }
 }

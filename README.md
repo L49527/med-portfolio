@@ -1,9 +1,8 @@
-# 評量展示助手 v1.0 (Refactored)
+# 評量展示助手 (Refactored)
 
 > 輔仁大學附設醫院 | 醫學教育評量資料視覺化展示工具
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-v1.0-green.svg)
 
 ## 📋 專案簡介
 
@@ -27,10 +26,13 @@
 - **教師給分偏好**：統計不同教師的平均給分趨勢。
 
 ### 4. 其它特色
-- **🖨️ 友善列印**：專為 A4 橫式列印優化的 CSS 設定，適合產出紙本成果報告。
+- **🖨️ 列印優化 (Accreditation Ready)**：針對 A4 橫式列印深度優化。
+    - **核彈級 UI 隱藏**：列印時採用 DOM 搬移技術，徹底移除網頁選單與按鈕，產出乾淨無暇的報告。
+    - **智能標尺**：連續分數型圖表 Y 軸自動對齊 60-100 分，放大進步落差。
+    - **專屬封面頁**：自動產出符合評鑑需求的成果展展示首頁。
 - **🔒 資料隱私**：採純前端架構 (No-Server)，所有資料運算皆在瀏覽器本地完成，確保機敏資料不外流。
 
-## 🚀 檔案結構 (v1.0 重構版)
+## 🚀 檔案結構
 
 本專案已採用現代化模組設計，易於維護：
 
@@ -48,7 +50,7 @@
 - **核心**：HTML5, CSS3, Vanilla JavaScript (ES6+)
 - **框架/庫**：
     - [Tailwind CSS](https://tailwindcss.com/) - 實用優先的 CSS 框架
-    - [Chart.js](https://www.chartjs.org/) - 互動式圖表繪製
+    - [Chart.js](https://www.chartjs.org/) - 互動式圖表繪繪製
     - [Font Awesome](https://fontawesome.com/) - 圖示庫
 
 ## 📖 使用方式
