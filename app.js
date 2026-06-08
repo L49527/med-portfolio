@@ -5,8 +5,6 @@ let currentStudentFilter = 'all';
 let currentTrainingFilter = 'all';
 let sortDirection = 'asc';
 let charts = {};
-let adminCharts = {};
-let isAdminMode = false;
 let selectedChartItems = new Set(); // Track selected items for chart view
 
 /* UI Logic */
@@ -33,7 +31,6 @@ function toggleChartSelector() {
 }
 
 function switchView(mode) {
-    if (isAdminMode) toggleAdminMode(); // Force exit admin
     const hCont = document.getElementById('historyContainer');
     const cCont = document.getElementById('compareContainer');
     const chartCont = document.getElementById('chartContainer');
@@ -48,225 +45,12 @@ function switchView(mode) {
     else if (mode === 'chart') { chartCont.classList.remove('hidden'); document.getElementById('chartModeBtn').classList.add('mode-active'); setTimeout(() => { generateExhibitionDashboard(); }, 100); }
 }
 
-/* --- Admin Mode Logic --- */
-function toggleAdminMode() {
-    isAdminMode = !isAdminMode;
-    const app = document.getElementById('appContainer');
-    const admin = document.getElementById('adminDashboard');
-    const btn = document.getElementById('adminBtn');
-    const normalBtns = document.getElementById('normalModeBtns');
-
-    if (isAdminMode) {
-        app.classList.add('hidden');
-        admin.classList.remove('hidden');
-        btn.classList.add('bg-orange-500', 'border-orange-400');
-        btn.classList.remove('bg-slate-700');
-        // Removed button text update logic
-        normalBtns.classList.add('opacity-30', 'pointer-events-none');
-        generateAdminDashboard();
-    } else {
-        app.classList.remove('hidden');
-        admin.classList.add('hidden');
-        btn.classList.remove('bg-orange-500', 'border-orange-400');
-        btn.classList.add('bg-slate-700');
-        normalBtns.classList.remove('opacity-30', 'pointer-events-none');
-    }
-}
-
-function generateAdminDashboard() {
-    if (historyData.length === 0) return;
-    renderFeedbackAudit();
-    renderCorrelationChart();
-    renderTeacherStats();
-}
-
-function renderFeedbackAudit() {
-    const tbody = document.getElementById('feedbackAuditBody');
-    tbody.innerHTML = '';
-
-    // Filter only items with potential feedback fields
-    const feedbackData = historyData.filter(d => ['DOPS', 'Mini-CEX', 'CbD', '實習總評量表'].includes(d.type));
-    const studentFeedbackHistory = {}; // To check for duplicates
-
-    feedbackData.forEach(d => {
-        const tr = document.createElement('tr');
-
-        // Clean text for analysis
-        const cleanGood = (d.feedbackGood || '').replace(/<[^>]*>?/gm, '').trim();
-        const cleanNeeds = (d.feedbackNeeds || '').replace(/<[^>]*>?/gm, '').trim();
-        const cleanFeedback = (d.studentFeedback || '').replace(/<[^>]*>?/gm, '').trim();
-
-        // Check Student Quality
-        let sQuality = 1; // 1:OK, 0:Bad
-        let sMsg = "";
-        let isDuplicate = false;
-
-        if (cleanFeedback.length > 0) {
-            if (studentFeedbackHistory[d.studentName] && studentFeedbackHistory[d.studentName].includes(cleanFeedback)) isDuplicate = true;
-            if (!studentFeedbackHistory[d.studentName]) studentFeedbackHistory[d.studentName] = [];
-            studentFeedbackHistory[d.studentName].push(cleanFeedback);
-        }
-
-        if (cleanFeedback.length < 6 || ["無", "沒有", "謝謝", "謝謝老師", "good", "ok"].includes(cleanFeedback.toLowerCase())) {
-            sQuality = 0; sMsg = "學員敷衍";
-        } else if (isDuplicate) {
-            sQuality = 0; sMsg = "學員複製";
-        }
-
-        // Check Teacher Quality
-        let tQuality = 1; // 1:OK, 0:Bad
-        let tMsg = "";
-        if (cleanNeeds.length < 4 || ["無", "沒有", "none", "good", "ok"].includes(cleanNeeds.toLowerCase())) {
-            tQuality = 0; tMsg = "教師評語過短";
-        }
-
-        // Build Status Badge
-        let statusHtml = '';
-        if (sQuality === 1 && tQuality === 1) statusHtml = '<span class="tag-badge bg-green-500/20 text-green-400">雙方優良</span>';
-        else {
-            if (tQuality === 0) statusHtml += `<div class="tag-badge bg-red-500/20 text-red-400 mb-1">⚠️ ${tMsg}</div>`;
-            if (sQuality === 0) statusHtml += `<div class="tag-badge bg-orange-500/20 text-orange-400">⚠️ ${sMsg}</div>`;
-        }
-
-        let displayGood = d.feedbackGood || '<span class="text-slate-600 italic">無</span>';
-        let displayNeeds = d.feedbackNeeds || '<span class="text-slate-600 italic">無</span>';
-        let displayFeedback = d.studentFeedback || '<span class="text-slate-600 italic">無</span>';
-
-        tr.innerHTML = `
-            <td class="text-center align-top pt-4">
-                <div class="font-black text-slate-200">${d.studentName}</div>
-                <div class="text-[10px] text-slate-500 font-mono mt-1">${d.date}</div>
-                <span class="text-[10px] px-2 py-0.5 rounded bg-slate-700 text-slate-300 mt-2 inline-block">${d.type}</span>
-            </td>
-            <td class="text-slate-300 text-sm leading-relaxed p-4 border-l border-slate-700">
-                <div class="text-orange-400 font-bold text-xs mb-2 flex items-center"><i class="fas fa-user-tie mr-1"></i>${d.teacherName}</div>
-                <div class="mb-3 bg-slate-700/30 p-2 rounded border-l-2 border-emerald-500">
-                    <div class="text-[10px] text-emerald-500 font-bold mb-1">【表現良好】</div>
-                    <div class="text-xs text-slate-300">${displayGood}</div>
-                </div>
-                <div class="bg-slate-700/30 p-2 rounded border-l-2 border-orange-500">
-                    <div class="text-[10px] text-orange-500 font-bold mb-1">【建議加強】</div>
-                    <div class="text-xs text-slate-300">${displayNeeds}</div>
-                </div>
-            </td>
-            <td class="text-slate-300 text-sm leading-relaxed p-4 border-l border-slate-700 align-top">
-                    <div class="text-blue-400 font-bold text-xs mb-2"><i class="fas fa-user-graduate mr-1"></i>學員回饋</div>
-                    <div class="text-xs text-slate-300 bg-slate-700/30 p-2 rounded border-l-2 border-blue-500 min-h-[60px]">${displayFeedback}</div>
-            </td>
-            <td class="text-center align-top pt-4 border-l border-slate-700">
-                ${statusHtml}
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-}
-
-function renderCorrelationChart() {
-    const ctx = document.getElementById('correlationChart').getContext('2d');
-    if (adminCharts.corr) adminCharts.corr.destroy();
-
-    const points = [];
-    const students = [...new Set(historyData.map(d => d.studentName))];
-
-    students.forEach(s => {
-        const sData = historyData.filter(d => d.studentName === s);
-        const dops = sData.filter(d => ['DOPS', 'Mini-CEX'].includes(d.type));
-        const milestones = sData.filter(d => d.type === 'Milestone');
-
-        if (dops.length > 0 && milestones.length > 0) {
-            // Calc Avg Score
-            const avgScore = dops.reduce((acc, curr) => acc + (parseFloat(curr.scoreRaw) || 0), 0) / dops.length;
-
-            // Calc Avg Level
-            let totalLvl = 0, countLvl = 0;
-            milestones.forEach(m => {
-                Object.values(m.milestoneLevels).forEach(l => {
-                    if (l) { totalLvl += parseFloat(l); countLvl++; }
-                });
-            });
-            const avgLvl = countLvl ? (totalLvl / countLvl) : 0;
-
-            if (avgScore > 0 && avgLvl > 0) {
-                points.push({ x: avgLvl, y: avgScore, name: s });
-            }
-        }
-    });
-
-    adminCharts.corr = new Chart(ctx, {
-        type: 'scatter',
-        data: {
-            datasets: [{
-                label: '學員能力分佈 (平均 Milestone Level vs 平均 DOPS 分數)',
-                data: points,
-                backgroundColor: '#fbbf24'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                x: { title: { display: true, text: '平均 Milestone Level (1-5)', color: '#94a3b8' }, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
-                y: { title: { display: true, text: '平均 DOPS/CEX 分數', color: '#94a3b8' }, min: 60, max: 100, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            return `${context.raw.name}: L${context.raw.x.toFixed(1)} / ${context.raw.y.toFixed(1)}分`;
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-function renderTeacherStats() {
-    const ctx = document.getElementById('teacherStatsChart').getContext('2d');
-    if (adminCharts.teacher) adminCharts.teacher.destroy();
-
-    const tStats = {};
-    historyData.filter(d => ['DOPS', 'Mini-CEX'].includes(d.type)).forEach(d => {
-        if (!tStats[d.teacherName]) tStats[d.teacherName] = { sum: 0, count: 0 };
-        const s = parseFloat(d.scoreRaw);
-        if (!isNaN(s)) {
-            tStats[d.teacherName].sum += s;
-            tStats[d.teacherName].count++;
-        }
-    });
-
-    const labels = Object.keys(tStats);
-    const data = labels.map(t => (tStats[t].sum / tStats[t].count).toFixed(1));
-
-    adminCharts.teacher = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: '教師平均給分',
-                data: data,
-                backgroundColor: '#10b981',
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: { min: 70, max: 100, grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
-                x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
-            }
-        }
-    });
-}
-
 /* --- Common Functions --- */
 function deleteItem(id) {
     if (confirm('確定要刪除此筆評量紀錄嗎？')) {
         historyData = historyData.filter(item => item.id !== id);
         updateFilterOptions();
         switchView(currentViewMode());
-        if (isAdminMode) generateAdminDashboard();
     }
 }
 
@@ -380,23 +164,28 @@ function generateExhibitionDashboard() {
                     partGroups[part].push(d);
                 });
 
-                // 只有當該儀器底下有大於等於一個明確的部位需要畫線時才產生圖表
+                // 3a. 部位細項對照 (長條圖) - 模仿筆試邏輯
                 if (Object.keys(partGroups).length > 0) {
-                    const maxLen = Math.max(...Object.values(partGroups).map(arr => arr.length));
-                    const labels = Array.from({ length: maxLen }, (_, i) => `第 ${i + 1} 次`);
-
-                    const datasets = Object.keys(partGroups).map((part, i) => ({
-                        label: part,
-                        data: partGroups[part].map(d => parseFloat(d.scoreRaw) || 0),
+                    const partNames = Object.keys(partGroups);
+                    const maxAttempts = Math.max(...Object.values(partGroups).map(arr => arr.length));
+                    const barDatasets = Array.from({ length: maxAttempts }, (_, i) => ({
+                        label: `第 ${i + 1} 次`,
+                        data: partNames.map(name => {
+                            const item = partGroups[name][i];
+                            return item ? parseFloat(item.scoreRaw) || 0 : null;
+                        }),
+                        backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.8),
                         borderColor: CHART_COLORS[i % CHART_COLORS.length],
-                        tension: 0.1, fill: false, pointRadius: 6
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        maxBarThickness: 30
                     }));
-                    createChart(`【${sName}】DOPS 成長曲線 - ${inst} (部位互比)`, 'line', labels, datasets, { y: { min: 60, max: 100 } });
+                    createChart(`【${sName}】DOPS 部位細項成績分析 - ${inst}`, 'bar', partNames, barDatasets, { y: { min: 60, max: 100 } });
                 }
             }
         }
 
-        // 4. 其他項目 (Mini-CEX, CbD, 實習總評量表) (按學員+表單類型區分，儀器互比)
+        // 4. 其他項目 (Mini-CEX, CbD, 實習總評量表) (按學員+表單類型區分，細項/儀器互比)
         const otherSkillTypes = ['Mini-CEX', 'CbD', '實習總評量表'];
         otherSkillTypes.forEach(type => {
             const skillData = sData.filter(d => d.type === type);
@@ -407,18 +196,146 @@ function generateExhibitionDashboard() {
                     if (!instGroups[inst]) instGroups[inst] = [];
                     instGroups[inst].push(d);
                 });
-                const maxLen = Math.max(...Object.values(instGroups).map(arr => arr.length));
-                const labels = Array.from({ length: maxLen }, (_, i) => `第 ${i + 1} 次`);
+                
+                // 嘗試提取更細的部位分組
+                const detailGroups = {};
+                skillData.forEach(d => {
+                    const detail = getSmartGroupName(d);
+                    if (!detailGroups[detail]) detailGroups[detail] = [];
+                    detailGroups[detail].push(d);
+                });
 
-                const datasets = Object.keys(instGroups).map((inst, i) => ({
-                    label: inst,
-                    data: instGroups[inst].map(d => parseFloat(d.scoreRaw) || 0),
+                // 4a. 成長曲線 (折線圖)
+                const maxLen = Math.max(...Object.values(detailGroups).map(arr => arr.length));
+                const labels = Array.from({ length: maxLen }, (_, i) => `第 ${i + 1} 次`);
+                const datasets = Object.keys(detailGroups).map((detail, i) => ({
+                    label: detail,
+                    data: detailGroups[detail].map(d => parseFloat(d.scoreRaw) || 0),
                     borderColor: CHART_COLORS[i % CHART_COLORS.length],
                     tension: 0.1, fill: false, pointRadius: 6
                 }));
-                createChart(`【${sName}】${type} 成長曲線 (儀器互比)`, 'line', labels, datasets, { y: { min: 60, max: 100 } });
+                createChart(`【${sName}】${type} 成長曲線 (細項/儀器互比)`, 'line', labels, datasets, { y: { min: 60, max: 100 } });
+
+                // 4b. 細項對照 (長條圖)
+                const detailNames = Object.keys(detailGroups);
+                const maxAt = Math.max(...Object.values(detailGroups).map(arr => arr.length));
+                const barDs = Array.from({ length: maxAt }, (_, i) => ({
+                    label: `第 ${i + 1} 次`,
+                    data: detailNames.map(name => {
+                        const item = detailGroups[name][i];
+                        return item ? parseFloat(item.scoreRaw) || 0 : null;
+                    }),
+                    backgroundColor: hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.8),
+                    borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    maxBarThickness: 30
+                }));
+                createChart(`【${sName}】${type} 細項成績分析對照`, 'bar', detailNames, barDs, { y: { min: 60, max: 100 } });
             }
         });
+
+        // 4.5 筆試成績 (按學員+儀器區分) - 使用 學前 / 學後 階段對比
+        const examData = sData.filter(d => d.type === '筆試成績' && d.instrumentType !== '基礎課程');
+        if (examData.length > 0) {
+            const instStageMap = {};
+            const stages = ['學前', '學後'];
+
+            examData.forEach(d => {
+                // 規範化儀器名稱 (學前總評估 / 學後總評估 -> 總評估)
+                let inst = d.instrumentType || '未分類儀器';
+                if (inst.includes('總評估')) inst = '總評估';
+
+                if (!instStageMap[inst]) instStageMap[inst] = { '學前': null, '學後': null };
+
+                // 根據標題或儀器別判斷階段
+                if (d.title.includes('學前') || d.instrumentType.includes('學前')) {
+                    instStageMap[inst]['學前'] = parseFloat(d.scoreRaw);
+                } else if (d.title.includes('學後') || d.instrumentType.includes('學後')) {
+                    instStageMap[inst]['學後'] = parseFloat(d.scoreRaw);
+                }
+            });
+
+            const instruments = Object.keys(instStageMap);
+            const datasets = [
+                {
+                    label: '學前',
+                    data: instruments.map(inst => instStageMap[inst]['學前']),
+                    backgroundColor: CHART_COLORS[0], // Indigo
+                    borderColor: CHART_COLORS[0],
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    maxBarThickness: 30
+                },
+                {
+                    label: '學後',
+                    data: instruments.map(inst => instStageMap[inst]['學後']),
+                    backgroundColor: CHART_COLORS[1], // Emerald
+                    borderColor: CHART_COLORS[1],
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    maxBarThickness: 30
+                }
+            ];
+
+            createChart(`【${sName}】筆試成績：學前 vs 學後 階段對照`, 'bar', instruments, datasets, { y: { min: 60, max: 100 } });
+        }
+
+        // 4.6 基礎課程細項分析 (特別針對筆試成績中的基礎課程)
+        const basicCourseData = sData.filter(d => d.type === '筆試成績' && d.instrumentType === '基礎課程');
+        if (basicCourseData.length > 0) {
+            // 按課程名稱分組 (例如：醫事放射相關法規, 輻射防護與輻射安全)
+            const courseGroups = {};
+            basicCourseData.forEach(d => {
+                // 移除「基礎課程：」前綴以及後面的「-2」等次數標記
+                const courseName = d.title.replace(/^基礎課程[：:]\s*/, '').replace(/-\d+$/, '').trim();
+                if (!courseGroups[courseName]) courseGroups[courseName] = [];
+                courseGroups[courseName].push(d);
+            });
+
+            const labels = Object.keys(courseGroups);
+            const maxAttempts = Math.max(...Object.values(courseGroups).map(arr => arr.length));
+            
+            const datasets = Array.from({ length: maxAttempts }, (_, i) => ({
+                label: `第 ${i + 1} 次`,
+                data: labels.map(name => {
+                    const item = courseGroups[name][i];
+                    return item ? parseFloat(item.scoreRaw) || 0 : null;
+                }),
+                backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                borderColor: CHART_COLORS[i % CHART_COLORS.length],
+                borderWidth: 1,
+                borderRadius: 4,
+                maxBarThickness: 40
+            }));
+
+            createChart(`【${sName}】基礎課程細項成績分析`, 'bar', labels, datasets, { y: { min: 60, max: 100 } });
+        }
+
+        // 4.7 學習滿意度調查 (按學員+儀器區分，以日期排序呈現長條圖)
+        const surveyData = sData.filter(d => d.type === '問卷調查');
+        if (surveyData.length > 0) {
+            const instGroups = {};
+            surveyData.forEach(d => {
+                const inst = d.instrumentType || '未分類儀器';
+                if (!instGroups[inst]) instGroups[inst] = [];
+                instGroups[inst].push(d);
+            });
+            for (let inst in instGroups) {
+                const sorted = instGroups[inst].sort((a, b) => a.date.localeCompare(b.date));
+                const labels = sorted.map(d => d.date);
+                const datasets = [{
+                    label: '滿意度分數',
+                    data: sorted.map(d => parseFloat(d.scoreRaw) || 0),
+                    backgroundColor: hexToRgba('#ec4899', 0.7),
+                    borderColor: '#ec4899',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    maxBarThickness: 30
+                }];
+                createChart(`【${sName}】學習滿意度調查成績 - ${inst}`, 'bar', labels, datasets, { y: { min: 70, max: 100 } });
+            }
+        }
 
         // 5. 學前/學後 階段對比 (按評量類型分別做儀器互比)
         // 只抓有「學前」或「學後」標記的表單（學中已有部位/儀器內部對比）
@@ -468,6 +385,23 @@ function generateExhibitionDashboard() {
             }
         });
     });
+
+    // 4.8 全部問卷總覽 (所有學員一起排列)
+    const allSurveyData = filtered.filter(d => d.type === '問卷調查').sort((a, b) => a.date.localeCompare(b.date));
+    if (allSurveyData.length > 0) {
+        const labels = allSurveyData.map(d => `${d.date} ${d.studentName}${d.instrumentType ? ' (' + d.instrumentType + ')' : ''}`);
+        const datasets = [{
+            label: '滿意度分數',
+            data: allSurveyData.map(d => parseFloat(d.scoreRaw) || 0),
+            backgroundColor: allSurveyData.map((d, i) => hexToRgba(CHART_COLORS[i % CHART_COLORS.length], 0.7)),
+            borderColor: allSurveyData.map((d, i) => CHART_COLORS[i % CHART_COLORS.length]),
+            borderWidth: 1,
+            borderRadius: 6,
+            maxBarThickness: 25
+        }];
+        createChart('全部學員學習滿意度調查總覽 (依日期排列)', 'bar', labels, datasets, { y: { min: 70, max: 100 } });
+    }
+
     const chartCards = grid.querySelectorAll('.chart-card');
     grid.className = (chartCards.length === 1) ? "grid grid-cols-1 gap-8" : "grid grid-cols-1 lg:grid-cols-2 gap-8";
 }
@@ -506,7 +440,9 @@ function populateChartItemSelector() {
         'EPA': 'bg-blue-500 text-white',
         'Milestone': 'bg-teal-500 text-white',
         '實習總評量表': 'bg-teal-600 text-white',
+        '筆試成績': 'bg-indigo-500 text-white',
         'Basic Course': 'bg-indigo-500 text-white',
+        '問卷調查': 'bg-pink-500 text-white',
         'Unknown': 'bg-slate-400 text-white'
     };
 
@@ -600,6 +536,8 @@ function createChart(title, type, labels, datasets, scales) {
             responsive: true,
             maintainAspectRatio: false,
             devicePixelRatio: 2,
+            barPercentage: 0.5, // 讓長條圖變細
+            categoryPercentage: 0.8,
             plugins: {
                 legend: {
                     position: 'bottom',
@@ -628,7 +566,7 @@ function renderCards() {
             <button onclick="deleteItem('${d.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-xl"><i class="fas fa-circle-xmark"></i></button>
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-4 mb-3">
-                    <span class="text-[10px] font-black px-3 py-1 rounded-lg ${d.type === 'EPA' ? 'bg-blue-600' : (d.type === 'Milestone' ? 'bg-teal-600' : (d.type === 'DOPS' ? 'bg-purple-600' : (d.type === 'CbD' ? 'bg-emerald-600' : 'bg-orange-500')))} text-white uppercase shadow-md font-bold tracking-widest">${d.type}</span>
+                    <span class="text-[10px] font-black px-3 py-1 rounded-lg ${d.type === 'EPA' ? 'bg-blue-600' : (d.type === 'Milestone' ? 'bg-teal-600' : (d.type === 'DOPS' ? 'bg-purple-600' : (d.type === 'CbD' ? 'bg-emerald-600' : (d.type === '筆試成績' ? 'bg-indigo-600' : (d.type === '問卷調查' ? 'bg-pink-500' : 'bg-orange-500')))))} text-white uppercase shadow-md font-bold tracking-widest">${d.type}</span>
                     <span class="text-sm text-slate-500 font-bold bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-inner tracking-tighter"><i class="far fa-calendar-check mr-1 text-teal-500"></i>${d.date}</span>
                     <span class="text-xs text-slate-400 font-black">【學員：${d.studentName}】</span>
                 </div>
@@ -639,7 +577,7 @@ function renderCards() {
                 <div class="space-y-2">${d.details.join('')}</div>
             </div>
             <div class="flex flex-col justify-center items-end min-w-[140px] border-l-2 border-slate-50 pl-8">
-                ${d.type === 'EPA' ? `<div class="flex flex-col gap-3">${[1, 2, 3].map(i => `<div class="border-2 rounded-2xl p-2 min-w-[110px] text-center shadow-sm ${getGradeStyle(d.opaScores[i])}"><span class="text-[10px] block uppercase opacity-80 mb-1 font-bold tracking-tighter font-black">OPA ${i}</span><span class="text-4xl font-black">${d.opaScores[i] || '?'}</span></div>`).join('')}</div>` : (['DOPS', 'Mini-CEX', 'CbD', '實習總評量表'].includes(d.type) ? `<div class="text-center"><div class="adaptive-score text-blue-700 font-mono drop-shadow-xl tracking-tighter font-black">${d.scoreRaw || '--'}</div><div class="adaptive-label text-slate-400 uppercase italic mt-4 tracking-widest font-black text-[11px]">Total Score</div></div>` : (d.type === 'Milestone' ? '<div class="text-xs font-black text-slate-300 uppercase italic">Level Based</div>' : ''))}
+                ${d.type === 'EPA' ? `<div class="flex flex-col gap-3">${[1, 2, 3].map(i => `<div class="border-2 rounded-2xl p-2 min-w-[110px] text-center shadow-sm ${getGradeStyle(d.opaScores[i])}"><span class="text-[10px] block uppercase opacity-80 mb-1 font-bold tracking-tighter font-black">OPA ${i}</span><span class="text-4xl font-black">${d.opaScores[i] || '?'}</span></div>`).join('')}</div>` : (['DOPS', 'Mini-CEX', 'CbD', '實習總評量表', '筆試成績', '問卷調查'].includes(d.type) ? `<div class="text-center"><div class="adaptive-score text-blue-700 font-mono drop-shadow-xl tracking-tighter font-black">${d.scoreRaw || '--'}</div><div class="adaptive-label text-slate-400 uppercase italic mt-4 tracking-widest font-black text-[11px]">Total Score</div></div>` : (d.type === 'Milestone' ? '<div class="text-xs font-black text-slate-300 uppercase italic">Level Based</div>' : ''))}
             </div></div>`).join('');
 }
 
@@ -659,7 +597,7 @@ function generateCompareTables() {
         html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><h3 class="text-xs font-black text-teal-600 mb-2 border-b border-teal-100 pb-1 w-fit uppercase font-black tracking-widest italic">Milestone 成長比對：${sName}</h3><table class="compare-table"><thead><tr><th class="text-slate-400 w-1/4 text-left font-black italic tracking-widest text-xs">指標 / 日期</th>${msGroups[sName].map(d => `<th class="font-black text-slate-800 bg-teal-50/50">${d.date}</th>`).join('')}</tr></thead><tbody class="adaptive-text font-black">`; html += getTeacherRow(msGroups[sName]); TARGET_MILESTONES.forEach(target => { html += `<tr><td class="font-bold text-slate-600 border-r border-slate-50 tracking-tighter text-xs">${target}</td>${msGroups[sName].map(d => `<td class="text-center"><span class="px-2 py-1 rounded font-black border ${getGradeStyle(d.milestoneLevels[target])}">${d.milestoneLevels[target] ? 'L' + d.milestoneLevels[target].toString().replace(/^L/i, '') : '-'}</span></td>`).join('')}</tr>`; }); html += `</tbody></table></div>`;
     }
 
-    const skillData = sorted.filter(d => ['DOPS', 'Mini-CEX', 'CbD', '實習總評量表'].includes(d.type));
+    const skillData = sorted.filter(d => ['DOPS', 'Mini-CEX', 'CbD', '實習總評量表', '筆試成績', '問卷調查'].includes(d.type));
     const skillGroups = {}; skillData.forEach(d => { const gKey = `${d.studentName} | ${getSmartGroupName(d)}`; if (!skillGroups[gKey]) skillGroups[gKey] = []; skillGroups[gKey].push(d); });
     for (let gKey in skillGroups) {
         const info = gKey.split(' | ');
@@ -751,7 +689,28 @@ function printAccreditationReport() {
         // Get student names for header
         const students = [...new Set(historyData.map(d => d.studentName))].sort();
         const studentNames = students.join('、') || '未知學員';
-        const printDate = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
+        // Calculate Training Period from data
+        const filteredData = getFilteredData();
+        const dates = filteredData.map(d => d.date).filter(d => d && d !== '1900-01-01');
+        let trainingPeriod = '未提供';
+        if (dates.length > 0) {
+            const sortedDates = [...dates].sort();
+            const firstDateStr = sortedDates[0];
+            const lastDateStr = sortedDates[sortedDates.length - 1];
+
+            // Start: 1st day of the earliest month
+            const firstParts = firstDateStr.split('-');
+            const startDate = `${firstParts[0]}年${parseInt(firstParts[1])}月01日`;
+
+            // End: Last day of the latest month
+            const lastParts = lastDateStr.split('-');
+            const year = parseInt(lastParts[0]);
+            const month = parseInt(lastParts[1]);
+            const lastDay = new Date(year, month, 0).getDate(); // month is 1-indexed here, so new Date(Y, M, 0) gives last day of M
+            const endDate = `${year}年${month}月${lastDay}日`;
+
+            trainingPeriod = `${startDate} 至 ${endDate}`;
+        }
 
         // 移除舊的 header / footer（避免重複）
         document.querySelectorAll('.print-header, .print-footer').forEach(el => el.remove());
@@ -761,11 +720,11 @@ function printAccreditationReport() {
         printHeader.className = 'print-header chart-card';
         printHeader.innerHTML = `
             <div class="print-header-inner">
-                <h1>醫學教育成果展示報告</h1>
+                <h1>醫事放射師PGY成果展示報告</h1>
                 <p>受評學員：${studentNames}</p>
-                <p>列印日期：${printDate}</p>
+                <p>受訓時間：${trainingPeriod}</p>
                 <p class="print-sub">本報告依據教學醫院評鑑基準產出，呈現學員能力成長軌跡</p>
-                <p class="print-sub">評量展示助手 產出 | 列印時間：${new Date().toLocaleString('zh-TW')}</p>
+                <p class="print-sub">評量展示助手 產出 | 本報告依據學員於受訓期間內之評量數據統計產出</p>
             </div>
         `;
         chartGrid.insertBefore(printHeader, chartGrid.firstChild);

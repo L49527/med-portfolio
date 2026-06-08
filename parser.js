@@ -4,7 +4,16 @@ const CORE_COMPETENCIES = ["醫學影像知識", "團隊溝通能力", "病人�
 const CORE_MAP = { "醫學影像知識": [0, 1], "團隊溝通能力": [2, 3], "病人照護核心": [4, 5, 6, 7, 8], "本職技能提升": [9], "專業素養表現": [10, 11] };
 const OPA_VALUE_MAP = { 'N/A': 0, '1': 1, '2A': 2, '2B': 3, '3A': 4, '3B': 5, '3C': 6, '4': 7, '5': 8 };
 const OPA_LABEL_MAP = { 0: 'N/A', 1: '1', 2: '2a', 3: '2b', 4: '3a', 5: '3b', 6: '3c', 7: '4', 8: '5' };
-const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#7c3aed', '#e11d48', '#db2777', '#0891b2', '#475569'];
+const CHART_COLORS = [
+    '#6366f1', // Indigo
+    '#10b981', // Emerald
+    '#f59e0b', // Amber
+    '#3b82f6', // Blue
+    '#ec4899', // Pink
+    '#8b5cf6', // Violet
+    '#06b6d4', // Cyan
+    '#ef4444'  // Red
+];
 
 /* Helper Functions */
 function hexToRgba(hex, alpha) {
@@ -14,13 +23,27 @@ function hexToRgba(hex, alpha) {
 
 function getSmartGroupName(item) {
     const title = item.title;
+
+    // 新增：特別針對 DOPS-XXXX-影像醫學科 格式提取 XXXX (細項部位)
+    const dopsMatch = title.match(/^DOPS-(.*?)-/i);
+    if (dopsMatch && dopsMatch[1]) {
+        let part = dopsMatch[1].replace(/學前|測驗|學中|學後|評量|訓練/g, '').trim();
+        if (part) return part;
+    }
+
     // 移除學前/學中/學後，只保留真實部位相關的詞彙
-    const keywords = ["頭頸部", "胸腹部", "胸部", "腹部", "CTA", "Dynamic", "四肢部", "脊椎部", "Pancreas", "Liver"];
+    if (title.includes("放射醫學影像及儀器品保")) return "影像學";
+    const keywords = ["頭頸部", "胸腹部", "胸部", "腹部", "CTA", "Dynamic", "四肢部", "脊椎部", "Pancreas", "Liver", "乳房攝影", "Mammo", "頸椎", "腰椎", "骨盆", "KUB", "Chest", "Abdomen", "Brain", "Spine", "影像及儀器品保", "影像學"];
     for (let key of keywords) { if (title.includes(key)) return key; }
+
+    // 若無具體部位關鍵字，優先使用已識別的儀器類別
+    if (item.instrumentType && !["未分類", "放射治療", "無", ""].includes(item.instrumentType)) {
+        return item.instrumentType;
+    }
 
     // 如果找不到指定的 keyword，那就嘗試從標題濾掉表單類型名稱後，取剩餘有意義的部位
     // 同時過濾掉「學前/學中/學後/訓練」這類干擾字
-    let cleanTitle = title.replace(/^(DOPS|Mini-CEX|CEX|CbD|EPA|Milestone)[-\s:_/]+/i, '')
+    let cleanTitle = title.replace(/^(DOPS|Mini-CEX|CEX|CbD|EPA|Milestone|EPA\d)[-\s:_/]+/i, '')
         .replace(/學前|測驗|學中|學後|評量|訓練/g, '')
         .trim();
 
@@ -125,6 +148,8 @@ function buildItemDetails(item) {
         if (item.feedbackGood) item.details.push(`<div class="adaptive-text mb-1 text-slate-700 font-medium leading-snug"><span class="text-emerald-700 font-bold mr-1 italic">【表現良好】</span>${item.feedbackGood}</div>`);
         if (item.feedbackNeeds) item.details.push(`<div class="adaptive-text mb-1 text-slate-700 font-medium leading-snug"><span class="text-amber-700 font-bold mr-1 italic">【建議加強】</span>${item.feedbackNeeds}</div>`);
         if (item.studentFeedback) item.details.push(`<div class="adaptive-text bg-blue-50 p-2 rounded-lg italic text-slate-800 font-bold border border-blue-100 shadow-inner mt-2"><span class="text-blue-800 font-black mr-2">學員回饋</span>${item.studentFeedback}</div>`);
+    } else if (item.type === '筆試成績') {
+        // 筆試成績模式不顯示項目、表現良好、建議加強、學員回饋
     } else if (item.type === 'EPA') {
         [1, 2, 3].forEach(i => { if (item.opaScores[i]) item.details.push(`<div class="mt-1 border-l-2 border-blue-400 pl-3 py-1 bg-white rounded shadow-sm border border-slate-100"><div class="flex justify-between items-center mb-0.5 font-bold"><span class="text-[10px] text-blue-400 font-black uppercase">OPA ${i}</span><span class="px-2 py-0.5 rounded text-[10px] font-black border ${getGradeStyle(item.opaScores[i])}">${item.opaScores[i]}</span></div><div class="adaptive-text text-slate-700">${item.opaFeedbacks[i] || '無具體建議'}</div></div>`); });
     }
@@ -208,12 +233,14 @@ function analyzeCSV(content) {
 
                 // --- 特別修復 ---
                 // E-Portfolio 的導出工具預設會把 EPA 的儀器別全部填上「放射治療」！必須在這裡將其洗掉
-                if (type === 'EPA' && instRaw.includes('放射治療')) {
+                // 擴大修復範圍：如果儀器別是放射治療、無、或未分類，都進來重新判斷
+                if (type === 'EPA' && (instRaw.includes('放射治療') || !instRaw || instRaw === "無" || instRaw === "未分類")) {
                     const t = title;
-                    if (t.includes('電腦斷層')) instRaw = 'CT';
-                    else if (t.includes('血管攝影')) instRaw = 'Angio';
-                    else if (t.includes('磁振造影')) instRaw = 'MRI';
-                    else if (t.includes('一般診斷')) instRaw = '一般診斷攝影';
+                    if (t.includes('電腦斷層') || t.includes('EPA1')) instRaw = 'CT';
+                    else if (t.includes('一般診斷') || t.includes('EPA2')) instRaw = '一般攝影';
+                    else if (t.includes('乳房攝影') || t.includes('Mammo') || t.includes('EPA3')) instRaw = 'Mammo';
+                    else if (t.includes('磁振造影') || t.includes('EPA4')) instRaw = 'MRI';
+                    else if (t.includes('血管攝影') || t.includes('EPA5')) instRaw = 'Angio';
                     else if (t.includes('透視') || t.includes('特殊')) instRaw = 'Special';
                     else if (t.includes('超音波')) instRaw = 'Sono';
                     else if (t.includes('核子醫學')) instRaw = 'NM';
@@ -241,7 +268,7 @@ function analyzeCSV(content) {
                     studentFeedback: getValue("學員回饋意見") || getValue("評語/心得") || '',
                     teacherName: getValue("教師/主持人") || '未註明',
                     trainingType: getValue("訓練別編號") || getValue("科別") || '未分類',
-                    instrumentType: instRaw || '',
+                    instrumentType: (instRaw || '').includes('總評估') ? '總評估' : (instRaw || ''),
                     stationDetails: getValue("各站成績") || '', // 新增：支援 v5.1 各站成績 (基礎課程細項)
                     milestoneLevels: {},
                     details: []

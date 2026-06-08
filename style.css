@@ -91,6 +91,12 @@ body {
     position: relative;
 }
 
+.chart-canvas-wrap {
+    height: 400px;
+    position: relative;
+    width: 100%;
+}
+
 .filter-btn {
     background-color: #f1f5f9;
     color: #64748b;
@@ -155,61 +161,6 @@ body {
     letter-spacing: 0.1em;
 }
 
-/* Admin Dashboard Styles */
-#adminDashboard {
-    background-color: #1e293b;
-    color: #e2e8f0;
-}
-
-.admin-card {
-    background-color: #334155;
-    border-radius: 1rem;
-    padding: 1.5rem;
-    border: 1px solid #475569;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-}
-
-.admin-table th {
-    background-color: #0f172a;
-    color: #94a3b8;
-    padding: 0.75rem;
-    text-align: left;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-bottom: 2px solid #475569;
-    position: sticky;
-    top: 0;
-}
-
-.admin-table td {
-    padding: 0.75rem;
-    border-bottom: 1px solid #475569;
-    font-size: 0.9rem;
-    vertical-align: top;
-}
-
-.admin-table tr:hover {
-    background-color: #475569;
-}
-
-.tag-badge {
-    display: inline-block;
-    padding: 0.1rem 0.4rem;
-    border-radius: 0.3rem;
-    font-size: 0.7rem;
-    font-weight: bold;
-    margin-right: 0.3rem;
-    margin-bottom: 0.2rem;
-}
-
-.highlight-match {
-    background-color: rgba(251, 191, 36, 0.3);
-    color: #fbbf24;
-    padding: 0 2px;
-    border-radius: 2px;
-}
-
 /* Print Mode Styles for Accreditation */
 @media print {
     * {
@@ -230,7 +181,6 @@ body {
     #sidebar,
     #appContainer,
     #chartSelectorPanel,
-    #adminDashboard,
     #progressOverlay,
     #emptyState,
     .print-hide {

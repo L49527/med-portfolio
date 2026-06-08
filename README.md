@@ -1,67 +1,43 @@
-# 評量展示助手 (Refactored)
+# 醫學教育評量展示助手 (Medical Education Assessment Dashboard)
 
-> 輔仁大學附設醫院 | 醫學教育評量資料視覺化展示工具
+## 修正記錄 (Revision History)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+### 2026-04-22: 整合「筆試成績」功能 (Integration of Written Test Scores)
+- **新增筆試成績支援**：系統可解析 CSV 中的「筆試成績」類型。為保持介面簡潔，筆試卡片僅顯示基本資訊與分數，不顯示回饋欄位。
+  **Added Written Test Score Support**: The system parses "Written Test Score" from CSV. To keep the UI clean, test cards only display basic info and scores, excluding feedback fields.
+- **新增分析圖表**：在「成果展」模式中，新增「筆試成績分析」直方圖，依類別（如 CT, MRI, 基礎課程）呈現。
+  **Added Analysis Chart**: In "Exhibition" mode, a "Written Test Score Analysis" bar chart has been added, presented by category (e.g., CT, MRI, Basic Course).
+- **介面優化**：為筆試成績卡片設定了專屬的靛藍色 (Indigo) 主題與評分顯示邏輯。
+  **UI Optimization**: Set a dedicated Indigo theme and score display logic for written test score cards.
 
-## 📋 專案簡介
+### 2026-04-22: 優化列印模式時間顯示 (Optimization of Print Mode Time Display)
+- **更新受訓時間顯示**：將報告封面原本的「列印日期」與「列印時間」移除，改為根據匯入資料自動計算的「受訓時間」。日期範圍會自動擴展至完整月份（最早月份 1 日至最晚月份最後一日），以符合一般受訓週期。
+  **Updated Training Period Display**: Replaced "Print Date" and "Print Time" on the report cover with an automatically calculated "Training Period". The date range now automatically expands to full months (from the 1st of the earliest month to the last day of the latest month) to align with standard training cycles.
 
-**評量展示助手** 是一個專為醫學教育設計的純前端資料視覺化工具。它能將複雜的評量 CSV 資料（如 DOPS, Mini-CEX, EPA, Milestone）轉換為直觀的互動式儀表板，協助教學部、教師與學員檢視學習成效。
+### 2026-04-22: 修改報告標題 (Update Report Title)
+- **更新報告名稱**：將列印模式封面標題由「醫學教育成果展示報告」修改為「醫事放射師PGY成果展示報告」，以更精確地反映放射師 PGY 受訓性質。
+  **Updated Report Title**: Changed the report cover title from "Medical Education Assessment Report" to "Medical Radiologist PGY Assessment Report" to accurately reflect the nature of radiologist PGY training.
 
-## ✨ 核心功能
+### 2026-04-22: 優化筆試成績圖表呈現 (Optimization of Written Test Score Chart)
+- **重整圖表結構**：將「筆試成績：學前 vs 學後」圖表的 X 軸調整為以「儀器」分組，並將「學前」與「學後」設為不同顏色的資料集，使對比更清晰。
+  **Reorganized Chart Structure**: Adjusted the X-axis of the "Written Test Score: Pre vs Post" chart to group by "Instrument", and set "Pre" and "Post" as datasets with different colors for clearer comparison.
 
-### 1. 多維度展示模式
-- **🃏 卡片模式 (Card View)**：以資訊卡形式瀏覽單筆評量細節，支援狀態燈號與分數強調。
-- **📊 互比模式 (Compare View)**：以表格形式橫向比對同一學員在不同時間點的成長軌跡（支援 Milestone/EPA/技能評量）。
-- **🏆 成果展模式 (Exhibition View)**：自動生成雷達圖與趨勢圖，視覺化呈現主要核心能力（Core Competencies）與信賴授權等級（EPA Levels）。
-
-### 2. 強大資料處理
-- **批次匯入**：支援拖放多個 CSV 檔案一次匯入。
-- **智慧篩選**：可依「評量類型」、「學員姓名」、「訓練別」與「儀器別」快速篩選資料。
-- **自動解析**：內建解析器自動處理不同格式的評量資料（DOPS, Cbeta, etc.）。
-
-### 3. 教學品管後台
-- **師生回饋檢核**：自動分析教師評語與學員回饋的品質，標示過短或敷衍的內容。
-- **相關性分析**：分析 DOPS 分數與 Milestone 等級的關聯性。
-- **教師給分偏好**：統計不同教師的平均給分趨勢。
-
-### 4. 其它特色
-- **🖨️ 列印優化 (Accreditation Ready)**：針對 A4 橫式列印深度優化。
-    - **核彈級 UI 隱藏**：列印時採用 DOM 搬移技術，徹底移除網頁選單與按鈕，產出乾淨無暇的報告。
-    - **智能標尺**：連續分數型圖表 Y 軸自動對齊 60-100 分，放大進步落差。
-    - **專屬封面頁**：自動產出符合評鑑需求的成果展展示首頁。
-- **🔒 資料隱私**：採純前端架構 (No-Server)，所有資料運算皆在瀏覽器本地完成，確保機敏資料不外流。
-
-## 🚀 檔案結構
-
-本專案已採用現代化模組設計，易於維護：
-
-```bash
-├── index.html       # 主程式入口 (開啟此檔案即可使用)
-├── style.css        # 視覺樣式 (含 Tailwind 客製與列印設定)
-├── app.js           # 應用程式邏輯 (介面互動、圖表渲染)
-├── parser.js        # 資料核心 (CSV 解析、常數定義)
-├── logo.png         # 醫院 Logo
-└── README.md        # 專案說明文件
-```
-
-## 🛠️ 技術堆疊
-
-- **核心**：HTML5, CSS3, Vanilla JavaScript (ES6+)
-- **框架/庫**：
-    - [Tailwind CSS](https://tailwindcss.com/) - 實用優先的 CSS 框架
-    - [Chart.js](https://www.chartjs.org/) - 互動式圖表繪繪製
-    - [Font Awesome](https://fontawesome.com/) - 圖示庫
-
-## 📖 使用方式
-
-1. **開啟程式**：直接雙擊資料夾中的 `index.html`。
-2. **匯入資料**：將評量 CSV 檔案拖曳至左側側邊欄的虛線區域。
-3. **開始使用**：使用上方過濾器篩選資料，並切換不同模式檢視成果。
-
-## 📝 授權
-
-MIT License
+### 2026-04-22: DOPS 部位互比與筆試邏輯套用 (DOPS Part Comparison & Application of Written Test Logic)
+- **優化解析邏輯**：更新部位提取規則，優先從表單標題中識別「胸腹部」、「頭頸部」等細項部位，不再僅以大項儀器名稱（如 CT）進行分組。
+  **Optimized Parsing Logic**: Updated part extraction rules to prioritize identifying sub-items like "Chest/Abdomen" and "Head/Neck" from form titles, rather than grouping solely by broad instrument names (e.g., CT).
+- **新增部位對照長條圖**：為 DOPS、Mini-CEX 及 CbD 新增「部位細項成績分析」長條圖，套用與筆試成績相同的對照邏輯，讓不同細項間的表現一目了然。
+  **Added Part Comparison Bar Chart**: Introduced "Part Sub-item Score Analysis" bar charts for DOPS, Mini-CEX, and CbD, applying the same comparison logic as written test scores to visualize performance across different sub-items clearly.
+- **同步更新折線圖**：受惠於解析邏輯優化，DOPS 成長曲線折線圖現在會自動根據部位分線顯示，呈現更精確的部位互比趨勢。
+  **Synchronized Line Charts**: Benefiting from optimized parsing logic, DOPS growth curve line charts now automatically display separate lines based on parts, showing more precise part comparison trends.
 
 ---
-**Fu Jen Catholic University Hospital** | Medical Education Assessment
+
+## 功能概述 (Features)
+- 支援批次匯入 ePortfolio 匯出的 CSV 檔案。
+  Supports batch import of CSV files exported from ePortfolio.
+- 自動識別多種評量類型：DOPS, Mini-CEX, CbD, EPA, Milestone, 筆試成績。
+  Automatically identifies various assessment types: DOPS, Mini-CEX, CbD, EPA, Milestone, Written Test Scores.
+- 提供卡片檢視、成長互比、成果展圖表三種模式。
+  Provides three modes: Card View, Growth Comparison, and Exhibition Charts.
+- 支援列印功能，產出符合教學醫院評鑑標準的報告。
+  Supports printing functionality to produce reports meeting teaching hospital accreditation standards.

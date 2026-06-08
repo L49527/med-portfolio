@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>評量展示助手 v1.0</title>
+    <title>評量展示助手 v1.1</title>
 
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3063/3063176.png">
@@ -45,10 +45,6 @@
                     class="px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md hover:bg-indigo-700 bg-indigo-600 text-sm"><i
                         class="fas fa-award"></i> <span>成果展</span></button>
             </div>
-            <div class="w-px bg-slate-300 mx-1"></div>
-            <button onclick="toggleAdminMode()" id="adminBtn" title="後台管理模式"
-                class="bg-slate-700 hover:bg-orange-500 text-white px-3 py-1.5 rounded-xl font-black transition flex items-center justify-center gap-2 shadow-md text-sm border border-slate-600 w-10"><i
-                    class="fas fa-wrench"></i></button>
             <button onclick="printAccreditationReport()"
                 class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md text-sm"><i
                     class="fas fa-print"></i> 列印</button>
@@ -92,6 +88,8 @@
                         class="filter-btn text-orange-600">Mini-CEX</button>
                     <button onclick="setFilter('CbD')" id="f_CbD" class="filter-btn text-emerald-600">CbD</button>
                     <button onclick="setFilter('EPA')" id="f_EPA" class="filter-btn text-blue-600">EPA</button>
+                    <button onclick="setFilter('筆試成績')" id="f_筆試成績" class="filter-btn text-indigo-600">筆試</button>
+                    <button onclick="setFilter('問卷調查')" id="f_問卷調查" class="filter-btn text-pink-600">問卷</button>
                     <div class="h-6 w-px bg-slate-200 mx-2"></div>
                     <select id="studentFilter" onchange="setStudentFilter(this.value)"
                         class="custom-select border-blue-200 text-blue-800">
@@ -185,72 +183,6 @@
                     <div class="grid grid-cols-1 gap-8" id="chartGrid"></div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <div id="adminDashboard" class="hidden flex-1 flex flex-col overflow-hidden">
-        <div class="bg-slate-800 px-8 py-4 border-b border-slate-700 flex justify-between items-center shadow-lg z-20">
-            <h2 class="text-xl font-black text-white italic tracking-widest"><i
-                    class="fas fa-user-shield text-orange-500 mr-2"></i>教學品管後台儀表板</h2>
-            <div class="flex gap-3">
-                <div class="bg-slate-700 px-4 py-1 rounded text-xs text-slate-300 flex items-center gap-2">
-                    <div class="w-2 h-2 rounded-full bg-green-500"></div> 正常
-                    <div class="w-2 h-2 rounded-full bg-red-500 ml-2"></div> 警示 (內容過短/敷衍)
-                </div>
-            </div>
-        </div>
-
-        <div class="flex-1 overflow-y-auto p-6 grid grid-cols-12 gap-6">
-
-            <div class="col-span-12 lg:col-span-8 flex flex-col gap-6">
-                <div class="admin-card h-[650px] flex flex-col">
-                    <div class="flex justify-between items-center mb-4 border-b border-slate-600 pb-3">
-                        <h3 class="text-lg font-bold text-orange-400"><i class="fas fa-comments mr-2"></i>師生回饋品質雙向檢核
-                        </h3>
-                        <p class="text-xs text-slate-400">同時監測「教師填寫認真度」與「學生回饋針對性」</p>
-                    </div>
-                    <div class="flex-1 overflow-auto rounded-lg border border-slate-600">
-                        <table class="admin-table w-full text-left border-collapse">
-                            <thead>
-                                <tr>
-                                    <th class="w-32 text-center">日期 / 類型</th>
-                                    <th class="w-5/12 text-indigo-400">
-                                        <div class="flex justify-between items-center">
-                                            <span>教師回饋內容 (優點 & 改善)</span>
-                                            <span
-                                                class="text-[10px] bg-indigo-900 px-2 rounded text-indigo-200">審核重點</span>
-                                        </div>
-                                    </th>
-                                    <th class="w-4/12 text-blue-400">學生回饋</th>
-                                    <th class="w-24 text-center">品質狀態</th>
-                                </tr>
-                            </thead>
-                            <tbody id="feedbackAuditBody">
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-span-12 lg:col-span-4 flex flex-col gap-6">
-                <div class="admin-card">
-                    <h3 class="text-lg font-bold text-sky-400 mb-4"><i class="fas fa-project-diagram mr-2"></i>分數 vs
-                        能力對照</h3>
-                    <p class="text-xs text-slate-400 mb-2">檢視 DOPS 分數 (Y) 與 Milestone/EPA Level (X) 相關性。理論應呈正相關。</p>
-                    <div class="h-[250px]">
-                        <canvas id="correlationChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="admin-card flex-1">
-                    <h3 class="text-lg font-bold text-emerald-400 mb-4"><i
-                            class="fas fa-chalkboard-teacher mr-2"></i>教師評分偏好</h3>
-                    <div class="h-[200px]">
-                        <canvas id="teacherStatsChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
         </div>
     </div>
 
