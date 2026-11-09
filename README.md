@@ -1,5 +1,18 @@
 # 醫學教育評量展示助手 (Medical Education Assessment Dashboard)
 
+## 本機驗證
+
+使用 Node.js 執行 `node test.js`。測試使用匿名資料，不需私人 CSV。
+
+### 2026-11-09：成果展選取、匯入與報告修正
+- 「全不選」保留空選取；刪除、清空與再次匯入同步更新選取狀態。
+- 重複匯入時比對解析後完整內容（排除隨機 ID 與衍生 HTML），跳過相同紀錄；內容不同仍保留。
+- 匯入後顯示新增、重複及失敗檔案數；資料僅存在目前頁面，重新整理仍需重新匯入。
+- 封面姓名、筆數與評量資料涵蓋期間依目前篩選及勾選紀錄產生；不再擴展成整月或推定受訓期間。
+- 實習總評量表、輔導紀錄、單站評量及其他無圖表類型，以文字紀錄納入成果展與列印；缺少結果標示「未提供」。
+- 新增總評量、輔導與單站篩選按鈕；長篇紀錄可跨頁列印。
+- 修正 CSV 空引號欄位被誤讀成引號字元的問題，保留正常逸出引號內容。
+
 ## 修正記錄 (Revision History)
 
 ### 2026-04-22: 整合「筆試成績」功能 (Integration of Written Test Scores)
@@ -39,5 +52,5 @@
   Automatically identifies various assessment types: DOPS, Mini-CEX, CbD, EPA, Milestone, Written Test Scores.
 - 提供卡片檢視、成長互比、成果展圖表三種模式。
   Provides three modes: Card View, Growth Comparison, and Exhibition Charts.
-- 支援列印功能，產出符合教學醫院評鑑標準的報告。
-  Supports printing functionality to produce reports meeting teaching hospital accreditation standards.
+- 支援列印功能，產出供教學成果整理與評鑑準備使用的報告。
+  Supports printing functionality to produce reports for teaching reviews and accreditation preparation.

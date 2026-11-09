@@ -6,6 +6,61 @@ let currentTrainingFilter = 'all';
 let sortDirection = 'asc';
 let charts = {};
 let selectedChartItems = new Set(); // Track selected items for chart view
+let chartSelectionInitialized = false;
+
+/* Selection and import helpers */
+function stableImportValue(value) {
+    if (value === undefined) return 'undefined';
+    if (value === null || typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(stableImportValue).join(',')}]`;
+    return `{${Object.keys(value)
+        .filter(key => key !== 'id' && key !== 'details')
+        .sort()
+        .map(key => `${JSON.stringify(key)}:${stableImportValue(value[key])}`)
+        .join(',')}}`;
+}
+
+function getRecordContentKey(record) {
+    return stableImportValue(record);
+}
+
+function createImportedRecordId() {
+    return `record_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function initializeChartSelection() {
+    if (chartSelectionInitialized || historyData.length === 0) return;
+    historyData.forEach(item => {
+        if (item && item.id !== undefined && item.id !== null) selectedChartItems.add(item.id);
+    });
+    chartSelectionInitialized = true;
+}
+
+function addImportedRecordsToChartSelection(records) {
+    if (!chartSelectionInitialized) initializeChartSelection();
+    records.forEach(item => {
+        if (item && item.id !== undefined && item.id !== null) selectedChartItems.add(item.id);
+    });
+}
+
+function recordsFromImportResult(result) {
+    const records = Array.isArray(result) ? result : [result];
+    if (records.length === 0 || records.some(record => !record || typeof record !== 'object' || Array.isArray(record))) {
+        throw new Error('CSV 無可用評量資料');
+    }
+    return records;
+}
+
+function formatImportSummary(summary) {
+    let message = `匯入完成：新增 ${summary.added} 筆，重複 ${summary.duplicates} 筆，失敗 ${summary.failedFiles.length} 個檔案`;
+    if (summary.failedFiles.length > 0) message += `（${summary.failedFiles.join('、')}）`;
+    return message;
+}
+
+function getImportSummaryState(summary) {
+    if (summary.failedFiles.length === 0) return 'success';
+    return summary.added > 0 || summary.duplicates > 0 ? 'partial' : 'error';
+}
 
 /* UI Logic */
 function toggleSidebar() {
@@ -49,6 +104,7 @@ function switchView(mode) {
 function deleteItem(id) {
     if (confirm('確定要刪除此筆評量紀錄嗎？')) {
         historyData = historyData.filter(item => item.id !== id);
+        selectedChartItems.delete(id);
         updateFilterOptions();
         switchView(currentViewMode());
     }
@@ -57,7 +113,22 @@ function deleteItem(id) {
 function clearHistory() {
     if (confirm('確定要清空所有資料嗎？此動作無法復原。')) {
         historyData = [];
+        selectedChartItems.clear();
+        chartSelectionInitialized = false;
+        currentFilter = 'all';
+        currentStudentFilter = 'all';
+        currentTrainingFilter = 'all';
+        const importStatus = typeof document !== 'undefined' ? document.getElementById('importStatus') : null;
+        if (importStatus) {
+            importStatus.textContent = '';
+            if (importStatus.dataset) delete importStatus.dataset.state;
+        }
         updateFilterOptions();
+        if (typeof document !== 'undefined') {
+            document.querySelectorAll('.filter-btn').forEach(button => button.classList.remove('active-filter'));
+            const allFilterButton = document.getElementById('f_all');
+            if (allFilterButton) allFilterButton.classList.add('active-filter');
+        }
         switchView('card');
     }
 }
@@ -402,6 +473,12 @@ function generateExhibitionDashboard() {
         createChart('全部學員學習滿意度調查總覽 (依日期排列)', 'bar', labels, datasets, { y: { min: 70, max: 100 } });
     }
 
+    // Preserve selected records that do not have a quantitative chart.
+    const chartTypes = new Set(['Milestone', 'EPA', 'DOPS', 'Mini-CEX', 'CbD', '筆試成績', '問卷調查']);
+    filtered.filter(d => !chartTypes.has(d.type))
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .forEach(createRecordSummary);
+
     const chartCards = grid.querySelectorAll('.chart-card');
     grid.className = (chartCards.length === 1) ? "grid grid-cols-1 gap-8" : "grid grid-cols-1 lg:grid-cols-2 gap-8";
 }
@@ -414,17 +491,13 @@ function populateChartItemSelector() {
     if (!selector) return;
 
     const filtered = getFilteredData();
+    initializeChartSelection();
     if (filtered.length === 0) {
         selector.innerHTML = '<div class="text-slate-400 text-sm italic">請先匯入評量資料</div>';
         if (instrumentBtns) instrumentBtns.innerHTML = '';
         if (typeBtns) typeBtns.innerHTML = '';
         if (studentBtns) studentBtns.innerHTML = '';
         return;
-    }
-
-    // Initialize all items as selected if set is empty
-    if (selectedChartItems.size === 0) {
-        filtered.forEach(d => selectedChartItems.add(d.id));
     }
 
     // Extract unique categories - use instrumentType for instruments
@@ -498,17 +571,19 @@ function selectByCategory(category, value) {
             selectedChartItems.add(d.id);
         }
     });
+    if (historyData.length > 0) chartSelectionInitialized = true;
     generateExhibitionDashboard();
 }
 
 function toggleChartItem(id, element) {
     if (selectedChartItems.has(id)) {
         selectedChartItems.delete(id);
-        element.classList.remove('selected');
+        if (element) element.classList.remove('selected');
     } else {
         selectedChartItems.add(id);
-        element.classList.add('selected');
+        if (element) element.classList.add('selected');
     }
+    if (historyData.length > 0) chartSelectionInitialized = true;
     // Regenerate charts after selection change
     setTimeout(() => generateExhibitionDashboard(), 50);
 }
@@ -520,6 +595,7 @@ function selectAllChartItems(selectAll) {
     } else {
         selectedChartItems.clear();
     }
+    if (historyData.length > 0) chartSelectionInitialized = true;
     generateExhibitionDashboard();
 }
 
@@ -637,20 +713,62 @@ if (fileInput) fileInput.onchange = (e) => handleFiles(e.target.files);
 
 async function handleFiles(files) {
     if (!files || files.length === 0) return;
-    document.getElementById('progressOverlay').classList.remove('hidden');
+    const summary = { added: 0, duplicates: 0, failedFiles: [] };
+    const knownContent = new Set(historyData.map(getRecordContentKey));
+    const usedIds = new Set(historyData.map(item => item && item.id).filter(id => id !== undefined && id !== null));
+    const overlay = typeof document !== 'undefined' ? document.getElementById('progressOverlay') : null;
+    const importStatus = typeof document !== 'undefined' ? document.getElementById('importStatus') : null;
+    if (overlay) overlay.hidden = false;
+    if (importStatus) {
+        importStatus.textContent = '';
+        if (importStatus.dataset) importStatus.dataset.state = '';
+    }
+
     try {
-        for (let i = 0; i < files.length; i++) {
-            // Only process CSV files
-            if (!files[i].name.toLowerCase().endsWith('.csv')) continue;
-            const text = await files[i].text();
-            // Call analyzeCSV from parser.js
-            const result = analyzeCSV(text);
-            if (result) { if (Array.isArray(result)) historyData.push(...result); else historyData.push(result); }
+        for (const file of Array.from(files)) {
+            const fileName = file && file.name ? file.name : '未命名檔案';
+            try {
+                if (!file || typeof file.text !== 'function' || !fileName.toLowerCase().endsWith('.csv')) {
+                    throw new Error('僅支援 CSV 檔案');
+                }
+
+                const records = recordsFromImportResult(analyzeCSV(await file.text()));
+                const addedRecords = [];
+                records.forEach(record => {
+                    const contentKey = getRecordContentKey(record);
+                    if (knownContent.has(contentKey)) {
+                        summary.duplicates += 1;
+                        return;
+                    }
+
+                    if (record.id === undefined || record.id === null || usedIds.has(record.id)) {
+                        record.id = createImportedRecordId();
+                        while (usedIds.has(record.id)) record.id = createImportedRecordId();
+                    }
+                    usedIds.add(record.id);
+                    knownContent.add(contentKey);
+                    historyData.push(record);
+                    addedRecords.push(record);
+                    summary.added += 1;
+                });
+                addImportedRecordsToChartSelection(addedRecords);
+            } catch (error) {
+                console.error(`匯入失敗（${fileName}）:`, error);
+                summary.failedFiles.push(fileName);
+            }
         }
-    } catch (e) { console.error('匯入錯誤:', e); alert('匯入時發生錯誤: ' + e.message); }
-    document.getElementById('progressOverlay').classList.add('hidden');
+    } finally {
+        if (overlay) overlay.hidden = true;
+        if (fileInput) fileInput.value = '';
+    }
+
     updateFilterOptions();
     switchView('card');
+    if (importStatus) {
+        importStatus.textContent = formatImportSummary(summary);
+        if (importStatus.dataset) importStatus.dataset.state = getImportSummaryState(summary);
+    }
+    return summary;
 }
 
 function updateFilterOptions() {
@@ -672,6 +790,38 @@ function getFilteredData() {
     return data;
 }
 
+function escapeReportText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function createRecordSummary(item) {
+    const card = document.createElement('section');
+    card.className = 'chart-card record-summary';
+    card.dataset.recordId = item.id;
+    const fields = [
+        ['學員', item.studentName], ['評量日期', item.date],
+        ['教師／主持人', item.teacherName], ['訓練別', item.trainingType],
+        ['分數／結果', item.scoreRaw || '未提供'], ['各站成績', item.stationDetails],
+        ['表現良好項目', item.feedbackGood], ['建議加強項目', item.feedbackNeeds],
+        ['學員回饋／紀錄內容', item.studentFeedback]
+    ];
+    card.innerHTML = `<div class="record-summary-inner"><h3 class="adaptive-title">${escapeReportText(item.type)}｜${escapeReportText(item.title)}</h3>
+        <dl>${fields.filter(([, value]) => value !== undefined && value !== null && value !== '').map(([label, value]) =>
+            `<div class="record-field"><dt>${escapeReportText(label)}</dt><dd>${escapeReportText(value)}</dd></div>`).join('')}</dl></div>`;
+    document.getElementById('chartGrid').appendChild(card);
+}
+
+function getReportMetadata(records) {
+    const dates = records.map(d => d.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== '1900-01-01').sort();
+    return {
+        studentNames: [...new Set(records.map(d => d.studentName))].sort().join('、') || '未知學員',
+        period: dates.length ? `${dates[0]} 至 ${dates[dates.length - 1]}` : '未提供',
+        count: records.length
+    };
+}
+
 function printAccreditationReport() {
     if (historyData.length === 0) {
         alert('目前沒有資料可列印，請先匯入評量表單');
@@ -682,35 +832,17 @@ function printAccreditationReport() {
     switchView('chart');
 
     // Wait for charts to render
-    setTimeout(() => {
+    setTimeout(async () => {
+        if (document.getElementById('printContainer')) return;
         const chartGrid = document.getElementById('chartGrid');
         if (!chartGrid) return;
 
-        // Get student names for header
-        const students = [...new Set(historyData.map(d => d.studentName))].sort();
-        const studentNames = students.join('、') || '未知學員';
-        // Calculate Training Period from data
-        const filteredData = getFilteredData();
-        const dates = filteredData.map(d => d.date).filter(d => d && d !== '1900-01-01');
-        let trainingPeriod = '未提供';
-        if (dates.length > 0) {
-            const sortedDates = [...dates].sort();
-            const firstDateStr = sortedDates[0];
-            const lastDateStr = sortedDates[sortedDates.length - 1];
-
-            // Start: 1st day of the earliest month
-            const firstParts = firstDateStr.split('-');
-            const startDate = `${firstParts[0]}年${parseInt(firstParts[1])}月01日`;
-
-            // End: Last day of the latest month
-            const lastParts = lastDateStr.split('-');
-            const year = parseInt(lastParts[0]);
-            const month = parseInt(lastParts[1]);
-            const lastDay = new Date(year, month, 0).getDate(); // month is 1-indexed here, so new Date(Y, M, 0) gives last day of M
-            const endDate = `${year}年${month}月${lastDay}日`;
-
-            trainingPeriod = `${startDate} 至 ${endDate}`;
+        const reportData = getFilteredData().filter(d => selectedChartItems.has(d.id));
+        if (!reportData.length) {
+            alert('目前沒有勾選可列印的紀錄，請先選擇成果展項目');
+            return;
         }
+        const report = getReportMetadata(reportData);
 
         // 移除舊的 header / footer（避免重複）
         document.querySelectorAll('.print-header, .print-footer').forEach(el => el.remove());
@@ -720,13 +852,33 @@ function printAccreditationReport() {
         printHeader.className = 'print-header chart-card';
         printHeader.innerHTML = `
             <div class="print-header-inner">
+                <img class="print-logo" src="logo.png" alt="輔仁大學附設醫院">
                 <h1>醫事放射師PGY成果展示報告</h1>
-                <p>受評學員：${studentNames}</p>
-                <p>受訓時間：${trainingPeriod}</p>
-                <p class="print-sub">本報告依據教學醫院評鑑基準產出，呈現學員能力成長軌跡</p>
-                <p class="print-sub">評量展示助手 產出 | 本報告依據學員於受訓期間內之評量數據統計產出</p>
+                <p>受評學員：${escapeReportText(report.studentNames)}</p>
+                <p>評量資料涵蓋期間：${escapeReportText(report.period)}</p>
+                <p>納入紀錄：${report.count} 筆</p>
+                <p class="print-sub">評量展示助手 產出 | 本報告依目前篩選及勾選的評量紀錄產出</p>
             </div>
         `;
+
+        // Wait for the large cover logo to decode while the current UI remains visible.
+        const printLogo = printHeader.querySelector('.print-logo');
+        if (printLogo) {
+            try {
+                if (typeof printLogo.decode === 'function') {
+                    await printLogo.decode();
+                } else if (!printLogo.complete) {
+                    await new Promise((resolve, reject) => {
+                        printLogo.addEventListener('load', resolve, { once: true });
+                        printLogo.addEventListener('error', reject, { once: true });
+                    });
+                }
+            } catch {
+                printLogo.remove();
+            }
+        }
+
+        if (document.getElementById('printContainer')) return;
         chartGrid.insertBefore(printHeader, chartGrid.firstChild);
 
         // === 核彈級做法：把 chartGrid 搬到 body 下面，隱藏其他所有東西 ===
@@ -753,6 +905,7 @@ function printAccreditationReport() {
                 originalParent.appendChild(chartGrid);
             }
             // 移除列印容器
+            printHeader.remove();
             printContainer.remove();
             // 還原 body 子元素
             bodyChildren.forEach(el => {

@@ -186,7 +186,7 @@ function analyzeCSV(content) {
 
         const rows = []; let row = []; let curr = ""; let inQuotes = false;
         for (let i = 0; i < content.length; i++) {
-            let char = content[i]; if (char === '"' && content[i + 1] === '"') { curr += '"'; i++; } else if (char === '"') inQuotes = !inQuotes; else if (char === ',' && !inQuotes) { row.push(curr); curr = ""; } else if (char === '\n' && !inQuotes) { row.push(curr); rows.push(row); row = []; curr = ""; } else curr += char;
+            let char = content[i]; if (inQuotes && char === '"' && content[i + 1] === '"') { curr += '"'; i++; } else if (char === '"') inQuotes = !inQuotes; else if (char === ',' && !inQuotes) { row.push(curr); curr = ""; } else if (char === '\n' && !inQuotes) { row.push(curr); rows.push(row); row = []; curr = ""; } else curr += char;
         }
         if (curr || row.length) { row.push(curr); rows.push(row); }
 
