@@ -140,18 +140,24 @@ function analyzeHTML(raw) {
     } catch (e) { console.error("Parse error", e); return null; }
 }
 
+function escapeAssessmentText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
 function buildItemDetails(item) {
     item.details = [];
-    item.details.push(`<div class="mb-2 text-[11px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded border inline-block tracking-tighter">訓練別：${item.trainingType}</div>`);
+    item.details.push(`<div class="mb-2 text-[11px] font-black text-slate-400 bg-slate-50 px-2 py-0.5 rounded border inline-block tracking-tighter">訓練別：${escapeAssessmentText(item.trainingType)}</div>`);
     if (['DOPS', 'Mini-CEX', 'CbD'].includes(item.type)) {
-        if (item.skillName) item.details.push(`<div class="bg-slate-200 p-2 px-3 rounded-lg text-[13px] font-black border-l-4 border-slate-500 mb-2 leading-tight">項目：${item.skillName}</div>`);
-        if (item.feedbackGood) item.details.push(`<div class="adaptive-text mb-1 text-slate-700 font-medium leading-snug"><span class="text-emerald-700 font-bold mr-1 italic">【表現良好】</span>${item.feedbackGood}</div>`);
-        if (item.feedbackNeeds) item.details.push(`<div class="adaptive-text mb-1 text-slate-700 font-medium leading-snug"><span class="text-amber-700 font-bold mr-1 italic">【建議加強】</span>${item.feedbackNeeds}</div>`);
-        if (item.studentFeedback) item.details.push(`<div class="adaptive-text bg-blue-50 p-2 rounded-lg italic text-slate-800 font-bold border border-blue-100 shadow-inner mt-2"><span class="text-blue-800 font-black mr-2">學員回饋</span>${item.studentFeedback}</div>`);
+        if (item.skillName) item.details.push(`<div class="bg-slate-200 p-2 px-3 rounded-lg text-[13px] font-black border-l-4 border-slate-500 mb-2 leading-tight">項目：${escapeAssessmentText(item.skillName)}</div>`);
+        if (item.feedbackGood) item.details.push(`<div class="adaptive-text mb-1 text-slate-700 font-medium leading-snug"><span class="text-emerald-700 font-bold mr-1 italic">【表現良好】</span>${escapeAssessmentText(item.feedbackGood)}</div>`);
+        if (item.feedbackNeeds) item.details.push(`<div class="adaptive-text mb-1 text-slate-700 font-medium leading-snug"><span class="text-amber-700 font-bold mr-1 italic">【建議加強】</span>${escapeAssessmentText(item.feedbackNeeds)}</div>`);
+        if (item.studentFeedback) item.details.push(`<div class="adaptive-text bg-blue-50 p-2 rounded-lg italic text-slate-800 font-bold border border-blue-100 shadow-inner mt-2"><span class="text-blue-800 font-black mr-2">學員回饋</span>${escapeAssessmentText(item.studentFeedback)}</div>`);
     } else if (item.type === '筆試成績') {
         // 筆試成績模式不顯示項目、表現良好、建議加強、學員回饋
     } else if (item.type === 'EPA') {
-        [1, 2, 3].forEach(i => { if (item.opaScores[i]) item.details.push(`<div class="mt-1 border-l-2 border-blue-400 pl-3 py-1 bg-white rounded shadow-sm border border-slate-100"><div class="flex justify-between items-center mb-0.5 font-bold"><span class="text-[10px] text-blue-400 font-black uppercase">OPA ${i}</span><span class="px-2 py-0.5 rounded text-[10px] font-black border ${getGradeStyle(item.opaScores[i])}">${item.opaScores[i]}</span></div><div class="adaptive-text text-slate-700">${item.opaFeedbacks[i] || '無具體建議'}</div></div>`); });
+        [1, 2, 3].forEach(i => { if (item.opaScores[i]) item.details.push(`<div class="mt-1 border-l-2 border-blue-400 pl-3 py-1 bg-white rounded shadow-sm border border-slate-100"><div class="flex justify-between items-center mb-0.5 font-bold"><span class="text-[10px] text-blue-400 font-black uppercase">OPA ${i}</span><span class="px-2 py-0.5 rounded text-[10px] font-black border ${getGradeStyle(item.opaScores[i])}">${escapeAssessmentText(item.opaScores[i])}</span></div><div class="adaptive-text text-slate-700">${escapeAssessmentText(item.opaFeedbacks[i] || '無具體建議')}</div></div>`); });
     }
 
     // 新增：處理 v5.1 各站成績 (基礎課程細項)
@@ -167,15 +173,15 @@ function buildItemDetails(item) {
                     v.includes('不通過') ? 'text-teal-600 bg-teal-50 border-rose-200' : 'text-slate-600 bg-slate-50 border-slate-200';
 
                 item.details.push(`<div class="flex justify-between items-center py-1 border-b border-slate-50 adaptive-text font-black text-xs leading-tight">
-                    <span class="text-slate-700">${label.trim()}</span>
-                    <span class="px-2 py-0.5 rounded border ${colorClass} text-[10px]">${v}</span>
+                    <span class="text-slate-700">${escapeAssessmentText(label.trim())}</span>
+                    <span class="px-2 py-0.5 rounded border ${colorClass} text-[10px]">${escapeAssessmentText(v)}</span>
                 </div>`);
             }
         });
     }
 
     if (item.type === 'Milestone') {
-        TARGET_MILESTONES.forEach(target => { if (item.milestoneLevels[target]) item.details.push(`<div class="flex justify-between items-center py-1 border-b border-slate-50 adaptive-text font-black text-xs leading-tight"><span class="text-slate-700">${target}</span><span class="px-2 py-0.5 rounded border ${getGradeStyle(item.milestoneLevels[target])}">L${item.milestoneLevels[target]}</span></div>`); });
+        TARGET_MILESTONES.forEach(target => { if (item.milestoneLevels[target]) item.details.push(`<div class="flex justify-between items-center py-1 border-b border-slate-50 adaptive-text font-black text-xs leading-tight"><span class="text-slate-700">${target}</span><span class="px-2 py-0.5 rounded border ${getGradeStyle(item.milestoneLevels[target])}">L${escapeAssessmentText(item.milestoneLevels[target])}</span></div>`); });
     }
 }
 

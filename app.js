@@ -1,12 +1,13 @@
 /* Global State */
 let historyData = [];
 let currentFilter = 'all';
-let currentStudentFilter = 'all';
 let currentTrainingFilter = 'all';
+let currentInstrumentFilter = 'all';
 let sortDirection = 'asc';
 let charts = {};
 let selectedChartItems = new Set(); // Track selected items for chart view
 let chartSelectionInitialized = false;
+let importStatusTimer = null;
 
 /* Selection and import helpers */
 function stableImportValue(value) {
@@ -46,20 +47,80 @@ function addImportedRecordsToChartSelection(records) {
 function recordsFromImportResult(result) {
     const records = Array.isArray(result) ? result : [result];
     if (records.length === 0 || records.some(record => !record || typeof record !== 'object' || Array.isArray(record))) {
-        throw new Error('CSV 無可用評量資料');
+        throw new Error('檔案無可用評量資料');
     }
     return records;
 }
 
 function formatImportSummary(summary) {
-    let message = `匯入完成：新增 ${summary.added} 筆，重複 ${summary.duplicates} 筆，失敗 ${summary.failedFiles.length} 個檔案`;
-    if (summary.failedFiles.length > 0) message += `（${summary.failedFiles.join('、')}）`;
-    return message;
+    const parts = [];
+    if (summary.added > 0) parts.push(`已匯入 ${summary.added} 筆`);
+    else if (!summary.failedFiles.length) parts.push('本次無新增紀錄');
+    if (summary.duplicates > 0) parts.push(`略過 ${summary.duplicates} 筆重複紀錄`);
+    if (summary.failedFiles.length) {
+        parts.push(`${summary.failedFiles.length} 個檔案匯入失敗（${summary.failedFiles.join('、')}）`);
+    }
+    return parts.join('，');
 }
 
 function getImportSummaryState(summary) {
     if (summary.failedFiles.length === 0) return 'success';
     return summary.added > 0 || summary.duplicates > 0 ? 'partial' : 'error';
+}
+
+function clearImportStatus() {
+    if (importStatusTimer !== null) clearTimeout(importStatusTimer);
+    importStatusTimer = null;
+    const status = document.getElementById('importStatus');
+    status.textContent = '';
+    delete status.dataset.state;
+    document.getElementById('dismissImportStatus').hidden = true;
+}
+
+function showImportStatus(summary) {
+    clearImportStatus();
+    const status = document.getElementById('importStatus');
+    status.textContent = formatImportSummary(summary);
+    status.dataset.state = getImportSummaryState(summary);
+    if (summary.failedFiles.length) {
+        document.getElementById('dismissImportStatus').hidden = false;
+    } else {
+        importStatusTimer = setTimeout(clearImportStatus, 4000);
+    }
+}
+
+function renderSingleScoreGroups(studentName, type, records) {
+    const groups = new Map();
+    for (const record of records) {
+        const detail = getSmartGroupName(record);
+        const instrument = record.instrumentType || '';
+        const key = JSON.stringify([detail, instrument]);
+        if (!groups.has(key)) groups.set(key, { detail, instrument, records: [] });
+        groups.get(key).records.push(record);
+    }
+
+    const rendered = new Set();
+    for (const group of groups.values()) {
+        // Keep the existing before/after displays for assessments with a stage label.
+        if (group.records.some(record => /學前|學後|前測|後測/.test(record.title))) continue;
+        const scores = [];
+        for (const record of group.records) {
+            const raw = String(record.scoreRaw ?? '').trim().replace(/\s*分$/, '');
+            if (raw && Number.isFinite(Number(raw))) scores.push({ record, score: Number(raw) });
+        }
+        if (scores.length !== 1) continue;
+
+        const { record, score } = scores[0];
+        const date = record.date && record.date !== '1900-01-01' ? record.date : '日期未提供';
+        const groupLabel = [...new Set([group.detail, group.instrument].filter(Boolean))].join('／');
+        const title = escapeAssessmentText(`【${studentName}】${type} 評量分數${groupLabel ? ` - ${groupLabel}` : ''}`);
+        const dataset = { label: '評量分數', data: [score], backgroundColor: '#0f766e', maxBarThickness: 68 };
+        createChart(title, 'bar', [date], [dataset], {
+            y: { min: Math.min(0, score), max: Math.max(100, score) }
+        }, { singleScore: true });
+        group.records.forEach(item => rendered.add(item));
+    }
+    return records.filter(record => !rendered.has(record));
 }
 
 /* UI Logic */
@@ -69,20 +130,6 @@ function toggleSidebar() {
     sb.classList.toggle('expanded');
     document.getElementById('sidebarIcon').className = sb.classList.contains('expanded') ? 'fas fa-angles-left text-xl' : 'fas fa-angles-right text-xl';
     document.getElementById('sidebarBtnLabel').innerText = sb.classList.contains('expanded') ? '收合匯入區' : '開啟匯入區';
-}
-
-function toggleChartSelector() {
-    const content = document.getElementById('chartSelectorContent');
-    const icon = document.getElementById('chartSelectorIcon');
-    if (!content || !icon) return;
-
-    if (content.classList.contains('hidden')) {
-        content.classList.remove('hidden');
-        icon.classList.remove('-rotate-90');
-    } else {
-        content.classList.add('hidden');
-        icon.classList.add('-rotate-90');
-    }
 }
 
 function switchView(mode) {
@@ -116,34 +163,32 @@ function clearHistory() {
         selectedChartItems.clear();
         chartSelectionInitialized = false;
         currentFilter = 'all';
-        currentStudentFilter = 'all';
-        currentTrainingFilter = 'all';
-        const importStatus = typeof document !== 'undefined' ? document.getElementById('importStatus') : null;
-        if (importStatus) {
-            importStatus.textContent = '';
-            if (importStatus.dataset) delete importStatus.dataset.state;
-        }
+        currentTrainingFilter = currentInstrumentFilter = 'all';
+        clearImportStatus();
         updateFilterOptions();
-        if (typeof document !== 'undefined') {
-            document.querySelectorAll('.filter-btn').forEach(button => button.classList.remove('active-filter'));
-            const allFilterButton = document.getElementById('f_all');
-            if (allFilterButton) allFilterButton.classList.add('active-filter');
-        }
+        document.getElementById('typeFilter').value = 'all';
         switchView('card');
     }
 }
 
-function generateExhibitionDashboard() {
-    const grid = document.getElementById('chartGrid'); grid.innerHTML = '';
-    Object.values(charts).forEach(c => { if (c) c.destroy(); }); charts = {};
+function generateExhibitionDashboard({ refreshSelector = true, reportRecords } = {}) {
+    const grid = document.getElementById('chartGrid');
+    Object.values(charts).forEach(chart => chart.destroy());
+    charts = {};
+    grid.innerHTML = '';
+    const candidates = getFilteredData();
+    initializeChartSelection();
+    if (refreshSelector) populateChartItemSelector(candidates);
+    const filtered = reportRecords ?? getIncludedRecords(candidates);
+    document.getElementById('reportScopeCount').textContent =
+        `符合 ${candidates.length} 筆 · 已納入報告 ${filtered.length} 筆`;
+    document.getElementById('chartSelectorPanel').hidden = candidates.length === 0;
 
-    // Populate item selector
-    populateChartItemSelector();
-
-    // Get data filtered by both the main filters and the selected items
-    const filtered = getFilteredData().filter(d => selectedChartItems.has(d.id));
-    if (filtered.length === 0) {
-        grid.innerHTML = '<div class="col-span-full text-center py-20 text-slate-400"><i class="fas fa-chart-pie text-6xl mb-4 opacity-30"></i><p class="text-lg font-bold">請先選擇要納入成果展的項目</p></div>';
+    if (!filtered.length) {
+        const message = !historyData.length ? '請先匯入資料'
+            : !candidates.length ? '沒有符合目前篩選條件的紀錄'
+            : '目前篩選結果尚未納入報告';
+        grid.innerHTML = `<p class="record-empty">${message}</p>`;
         return;
     }
 
@@ -259,15 +304,8 @@ function generateExhibitionDashboard() {
         // 4. 其他項目 (Mini-CEX, CbD, 實習總評量表) (按學員+表單類型區分，細項/儀器互比)
         const otherSkillTypes = ['Mini-CEX', 'CbD', '實習總評量表'];
         otherSkillTypes.forEach(type => {
-            const skillData = sData.filter(d => d.type === type);
+            const skillData = renderSingleScoreGroups(sName, type, sData.filter(d => d.type === type));
             if (skillData.length > 0) {
-                const instGroups = {};
-                skillData.forEach(d => {
-                    const inst = d.instrumentType || '未分類儀器';
-                    if (!instGroups[inst]) instGroups[inst] = [];
-                    instGroups[inst].push(d);
-                });
-                
                 // 嘗試提取更細的部位分組
                 const detailGroups = {};
                 skillData.forEach(d => {
@@ -483,139 +521,77 @@ function generateExhibitionDashboard() {
     grid.className = (chartCards.length === 1) ? "grid grid-cols-1 gap-8" : "grid grid-cols-1 lg:grid-cols-2 gap-8";
 }
 
-function populateChartItemSelector() {
+function getIncludedRecords(candidates = getFilteredData()) {
+    return candidates.filter(record => selectedChartItems.has(record.id));
+}
+
+function populateChartItemSelector(candidates = getFilteredData()) {
     const selector = document.getElementById('chartItemSelector');
-    const instrumentBtns = document.getElementById('instrumentFilterBtns');
-    const typeBtns = document.getElementById('typeFilterBtns');
-    const studentBtns = document.getElementById('studentFilterBtns');
-    if (!selector) return;
-
-    const filtered = getFilteredData();
     initializeChartSelection();
-    if (filtered.length === 0) {
-        selector.innerHTML = '<div class="text-slate-400 text-sm italic">請先匯入評量資料</div>';
-        if (instrumentBtns) instrumentBtns.innerHTML = '';
-        if (typeBtns) typeBtns.innerHTML = '';
-        if (studentBtns) studentBtns.innerHTML = '';
-        return;
-    }
-
-    // Extract unique categories - use instrumentType for instruments
-    const instruments = [...new Set(filtered.map(d => d.instrumentType).filter(i => i && i.trim()))].sort();
-    const types = [...new Set(filtered.map(d => d.type))].sort();
-    const students = [...new Set(filtered.map(d => d.studentName))].sort();
-
-    // Type colors
-    const typeColors = {
-        'DOPS': 'bg-purple-500 text-white',
-        'Mini-CEX': 'bg-orange-500 text-white',
-        'CbD': 'bg-emerald-500 text-white',
-        'EPA': 'bg-blue-500 text-white',
-        'Milestone': 'bg-teal-500 text-white',
-        '實習總評量表': 'bg-teal-600 text-white',
-        '筆試成績': 'bg-indigo-500 text-white',
-        'Basic Course': 'bg-indigo-500 text-white',
-        '問卷調查': 'bg-pink-500 text-white',
-        'Unknown': 'bg-slate-400 text-white'
+    const previousScrollTop = selector.scrollTop;
+    selector.innerHTML = sortDataList([...candidates]).map(record => `
+        <label class="chart-item-checkbox">
+            <input type="checkbox" data-record-id="${escapeAssessmentText(record.id)}" ${selectedChartItems.has(record.id) ? 'checked' : ''}>
+            <span class="record-type" data-type="${escapeAssessmentText(record.type)}">${escapeAssessmentText(record.type)}</span>
+            <span>${escapeAssessmentText(record.title || '未命名評量')}</span>
+            <span class="text-slate-600">${escapeAssessmentText(record.instrumentType || '未分類')} · ${escapeAssessmentText(record.date)}</span>
+        </label>
+    `).join('');
+    selector.scrollTop = previousScrollTop;
+    selector.onchange = ({ target }) => {
+        if (!target.dataset.recordId) return;
+        const id = target.dataset.recordId;
+        if (target.checked) selectedChartItems.add(id);
+        else selectedChartItems.delete(id);
+        generateExhibitionDashboard({ refreshSelector: false });
     };
-
-    // Generate instrument filter buttons
-    if (instrumentBtns) {
-        instrumentBtns.innerHTML = instruments.length > 0 ? instruments.map(inst =>
-            `<button onclick="selectByCategory('instrument', '${inst}')" class="text-[10px] px-2 py-0.5 rounded bg-cyan-100 hover:bg-cyan-200 text-cyan-700 font-bold transition">${inst}</button>`
-        ).join('') : '<span class="text-slate-400 text-[10px]">無</span>';
-    }
-
-    // Generate type filter buttons
-    if (typeBtns) {
-        typeBtns.innerHTML = types.map(t => {
-            const color = typeColors[t] || 'bg-slate-400 text-white';
-            return `<button onclick="selectByCategory('type', '${t}')" class="text-[10px] px-2 py-0.5 rounded ${color} hover:opacity-80 font-bold transition">${t}</button>`;
-        }).join('');
-    }
-
-    // Generate student filter buttons
-    if (studentBtns) {
-        studentBtns.innerHTML = students.map(s =>
-            `<button onclick="selectByCategory('student', '${s}')" class="text-[10px] px-2 py-0.5 rounded bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold transition">${s}</button>`
-        ).join('');
-    }
-
-    // Generate item checkboxes
-    selector.innerHTML = filtered.map(d => {
-        const isSelected = selectedChartItems.has(d.id);
-        const typeColor = typeColors[d.type] || typeColors['Unknown'];
-        const instrumentLabel = d.instrumentType || '未分類';
-        return `
-            <label class="chart-item-checkbox ${isSelected ? 'selected' : ''}" onclick="toggleChartItem('${d.id}', this)">
-                <span class="type-tag ${typeColor}">${d.type}</span>
-                <span class="text-cyan-600">${instrumentLabel}</span>
-                <span>${d.studentName}</span>
-                <span class="text-slate-400">${d.date}</span>
-            </label>
-        `;
-    }).join('');
 }
 
-function selectByCategory(category, value) {
-    const filtered = getFilteredData();
-    // Clear current selection
-    selectedChartItems.clear();
-    // Add items matching the category
-    filtered.forEach(d => {
-        if (category === 'instrument' && d.instrumentType === value) {
-            selectedChartItems.add(d.id);
-        } else if (category === 'type' && d.type === value) {
-            selectedChartItems.add(d.id);
-        } else if (category === 'student' && d.studentName === value) {
-            selectedChartItems.add(d.id);
-        }
-    });
-    if (historyData.length > 0) chartSelectionInitialized = true;
+function selectAllChartItems(include) {
+    initializeChartSelection();
+    for (const record of getFilteredData()) {
+        if (include) selectedChartItems.add(record.id);
+        else selectedChartItems.delete(record.id);
+    }
     generateExhibitionDashboard();
 }
 
-function toggleChartItem(id, element) {
-    if (selectedChartItems.has(id)) {
-        selectedChartItems.delete(id);
-        if (element) element.classList.remove('selected');
-    } else {
-        selectedChartItems.add(id);
-        if (element) element.classList.add('selected');
+const singleScoreLabel = {
+    id: 'singleScoreLabel',
+    afterDatasetsDraw(chart) {
+        const bar = chart.getDatasetMeta(0).data[0];
+        if (!bar) return;
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.font = '700 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#1e293b';
+        ctx.fillText(String(chart.data.datasets[0].data[0]), bar.x, Math.min(bar.y, bar.base) - 6);
+        ctx.restore();
     }
-    if (historyData.length > 0) chartSelectionInitialized = true;
-    // Regenerate charts after selection change
-    setTimeout(() => generateExhibitionDashboard(), 50);
-}
+};
 
-function selectAllChartItems(selectAll) {
-    const filtered = getFilteredData();
-    if (selectAll) {
-        filtered.forEach(d => selectedChartItems.add(d.id));
-    } else {
-        selectedChartItems.clear();
-    }
-    if (historyData.length > 0) chartSelectionInitialized = true;
-    generateExhibitionDashboard();
-}
-
-function createChart(title, type, labels, datasets, scales) {
+function createChart(title, type, labels, datasets, scales, { singleScore = false } = {}) {
     const id = `chart_${Math.random().toString(36).substr(2, 9)}`;
-    const card = document.createElement('div'); card.className = 'chart-card slide-up';
-    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-8 text-center font-black tracking-tighter">${title}</h3><div class="chart-canvas-wrap w-full"><canvas id="${id}"></canvas></div></div>`;
+    const card = document.createElement('div'); card.className = singleScore ? 'chart-card single-score-chart' : 'chart-card slide-up';
+    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-8 text-center font-black tracking-tighter">${escapeAssessmentText(title)}</h3><div class="chart-canvas-wrap w-full"><canvas id="${id}"></canvas></div></div>`;
     document.getElementById('chartGrid').appendChild(card);
     const ctx = document.getElementById(id).getContext('2d');
     charts[id] = new Chart(ctx, {
         type,
         data: { labels, datasets },
+        ...(singleScore ? { plugins: [singleScoreLabel] } : {}),
         options: {
             responsive: true,
             maintainAspectRatio: false,
             devicePixelRatio: 2,
             barPercentage: 0.5, // 讓長條圖變細
             categoryPercentage: 0.8,
+            ...(singleScore ? { animation: false, layout: { padding: { top: 26 } } } : {}),
             plugins: {
                 legend: {
+                    ...(singleScore ? { display: false } : {}),
                     position: 'bottom',
                     labels: { font: { size: 8, weight: 'bold' }, padding: 6, boxWidth: 8 },
                     maxHeight: 40
@@ -642,18 +618,18 @@ function renderCards() {
             <button onclick="deleteItem('${d.id}')" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all text-xl"><i class="fas fa-circle-xmark"></i></button>
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-4 mb-3">
-                    <span class="text-[10px] font-black px-3 py-1 rounded-lg ${d.type === 'EPA' ? 'bg-blue-600' : (d.type === 'Milestone' ? 'bg-teal-600' : (d.type === 'DOPS' ? 'bg-purple-600' : (d.type === 'CbD' ? 'bg-emerald-600' : (d.type === '筆試成績' ? 'bg-indigo-600' : (d.type === '問卷調查' ? 'bg-pink-500' : 'bg-orange-500')))))} text-white uppercase shadow-md font-bold tracking-widest">${d.type}</span>
-                    <span class="text-sm text-slate-500 font-bold bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-inner tracking-tighter"><i class="far fa-calendar-check mr-1 text-teal-500"></i>${d.date}</span>
-                    <span class="text-xs text-slate-400 font-black">【學員：${d.studentName}】</span>
+                    <span class="text-[10px] font-black px-3 py-1 rounded-lg ${d.type === 'EPA' ? 'bg-blue-600' : (d.type === 'Milestone' ? 'bg-teal-600' : (d.type === 'DOPS' ? 'bg-purple-600' : (d.type === 'CbD' ? 'bg-emerald-600' : (d.type === '筆試成績' ? 'bg-indigo-600' : (d.type === '問卷調查' ? 'bg-pink-500' : 'bg-orange-500')))))} text-white uppercase shadow-md font-bold tracking-widest">${escapeAssessmentText(d.type)}</span>
+                    <span class="text-sm text-slate-500 font-bold bg-slate-50 px-2 py-1 rounded border border-slate-100 shadow-inner tracking-tighter"><i class="far fa-calendar-check mr-1 text-teal-500"></i>${escapeAssessmentText(d.date)}</span>
+                    <span class="text-xs text-slate-400 font-black">【學員：${escapeAssessmentText(d.studentName)}】</span>
                 </div>
-                <h3 class="adaptive-title text-slate-900 mb-3 leading-tight tracking-tighter font-black">${d.title}</h3>
+                <h3 class="adaptive-title text-slate-900 mb-3 leading-tight tracking-tighter font-black">${escapeAssessmentText(d.title)}</h3>
                 <div class="mb-4 inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-black border border-indigo-100 italic">
-                    <i class="fas fa-user-tie"></i> 評量教師：${d.teacherName}
+                    <i class="fas fa-user-tie"></i> 評量教師：${escapeAssessmentText(d.teacherName)}
                 </div>
                 <div class="space-y-2">${d.details.join('')}</div>
             </div>
             <div class="flex flex-col justify-center items-end min-w-[140px] border-l-2 border-slate-50 pl-8">
-                ${d.type === 'EPA' ? `<div class="flex flex-col gap-3">${[1, 2, 3].map(i => `<div class="border-2 rounded-2xl p-2 min-w-[110px] text-center shadow-sm ${getGradeStyle(d.opaScores[i])}"><span class="text-[10px] block uppercase opacity-80 mb-1 font-bold tracking-tighter font-black">OPA ${i}</span><span class="text-4xl font-black">${d.opaScores[i] || '?'}</span></div>`).join('')}</div>` : (['DOPS', 'Mini-CEX', 'CbD', '實習總評量表', '筆試成績', '問卷調查'].includes(d.type) ? `<div class="text-center"><div class="adaptive-score text-blue-700 font-mono drop-shadow-xl tracking-tighter font-black">${d.scoreRaw || '--'}</div><div class="adaptive-label text-slate-400 uppercase italic mt-4 tracking-widest font-black text-[11px]">Total Score</div></div>` : (d.type === 'Milestone' ? '<div class="text-xs font-black text-slate-300 uppercase italic">Level Based</div>' : ''))}
+                ${d.type === 'EPA' ? `<div class="flex flex-col gap-3">${[1, 2, 3].map(i => `<div class="border-2 rounded-2xl p-2 min-w-[110px] text-center shadow-sm ${getGradeStyle(d.opaScores[i])}"><span class="text-[10px] block uppercase opacity-80 mb-1 font-bold tracking-tighter font-black">OPA ${i}</span><span class="text-4xl font-black">${escapeAssessmentText(d.opaScores[i] || '?')}</span></div>`).join('')}</div>` : (['DOPS', 'Mini-CEX', 'CbD', '實習總評量表', '筆試成績', '問卷調查'].includes(d.type) ? `<div class="text-center"><div class="adaptive-score text-blue-700 font-mono drop-shadow-xl tracking-tighter font-black">${escapeAssessmentText(d.scoreRaw || '--')}</div><div class="adaptive-label text-slate-400 uppercase italic mt-4 tracking-widest font-black text-[11px]">Total Score</div></div>` : (d.type === 'Milestone' ? '<div class="text-xs font-black text-slate-300 uppercase italic">Level Based</div>' : ''))}
             </div></div>`).join('');
 }
 
@@ -665,51 +641,101 @@ function generateCompareTables() {
     const sorted = sortDataList([...filtered]); if (sorted.length === 0) return;
 
     let html = `<div class="mb-4 border-b-2 border-slate-900 pb-1 flex justify-between items-center"><h2 class="adaptive-title text-slate-900 uppercase italic tracking-tighter"><i class="fas fa-chart-line text-teal-500 mr-2"></i>學前 / 學中 / 學後 成長對照總表 (由遠而近)</h2></div>`;
-    const getTeacherRow = (list) => `<tr><td class="font-black text-indigo-600 text-center text-xs tracking-tighter bg-indigo-50/50">評量教師</td>${list.map(d => `<td class="text-center font-black text-indigo-700 bg-indigo-50/20 text-xs">${d.teacherName}</td>`).join('')}</tr>`;
-    const getStudentRow = (list) => `<tr><td class="font-black text-blue-600 text-center text-xs tracking-tighter bg-blue-50/50">受評學員</td>${list.map(d => `<td class="text-center font-black text-blue-700 bg-blue-50/20 text-xs">${d.studentName}</td>`).join('')}</tr>`;
+    const getTeacherRow = (list) => `<tr><td class="font-black text-indigo-600 text-center text-xs tracking-tighter bg-indigo-50/50">評量教師</td>${list.map(d => `<td class="text-center font-black text-indigo-700 bg-indigo-50/20 text-xs">${escapeAssessmentText(d.teacherName)}</td>`).join('')}</tr>`;
+    const getStudentRow = (list) => `<tr><td class="font-black text-blue-600 text-center text-xs tracking-tighter bg-blue-50/50">受評學員</td>${list.map(d => `<td class="text-center font-black text-blue-700 bg-blue-50/20 text-xs">${escapeAssessmentText(d.studentName)}</td>`).join('')}</tr>`;
 
     const msGroups = {}; sorted.filter(d => d.type === 'Milestone').forEach(d => { if (!msGroups[d.studentName]) msGroups[d.studentName] = []; msGroups[d.studentName].push(d); });
     for (let sName in msGroups) {
-        html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><h3 class="text-xs font-black text-teal-600 mb-2 border-b border-teal-100 pb-1 w-fit uppercase font-black tracking-widest italic">Milestone 成長比對：${sName}</h3><table class="compare-table"><thead><tr><th class="text-slate-400 w-1/4 text-left font-black italic tracking-widest text-xs">指標 / 日期</th>${msGroups[sName].map(d => `<th class="font-black text-slate-800 bg-teal-50/50">${d.date}</th>`).join('')}</tr></thead><tbody class="adaptive-text font-black">`; html += getTeacherRow(msGroups[sName]); TARGET_MILESTONES.forEach(target => { html += `<tr><td class="font-bold text-slate-600 border-r border-slate-50 tracking-tighter text-xs">${target}</td>${msGroups[sName].map(d => `<td class="text-center"><span class="px-2 py-1 rounded font-black border ${getGradeStyle(d.milestoneLevels[target])}">${d.milestoneLevels[target] ? 'L' + d.milestoneLevels[target].toString().replace(/^L/i, '') : '-'}</span></td>`).join('')}</tr>`; }); html += `</tbody></table></div>`;
+        html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><h3 class="text-xs font-black text-teal-600 mb-2 border-b border-teal-100 pb-1 w-fit uppercase font-black tracking-widest italic">Milestone 成長比對：${escapeAssessmentText(sName)}</h3><table class="compare-table"><thead><tr><th class="text-slate-400 w-1/4 text-left font-black italic tracking-widest text-xs">指標 / 日期</th>${msGroups[sName].map(d => `<th class="font-black text-slate-800 bg-teal-50/50">${escapeAssessmentText(d.date)}</th>`).join('')}</tr></thead><tbody class="adaptive-text font-black">`; html += getTeacherRow(msGroups[sName]); TARGET_MILESTONES.forEach(target => { html += `<tr><td class="font-bold text-slate-600 border-r border-slate-50 tracking-tighter text-xs">${target}</td>${msGroups[sName].map(d => `<td class="text-center"><span class="px-2 py-1 rounded font-black border ${getGradeStyle(d.milestoneLevels[target])}">${escapeAssessmentText(d.milestoneLevels[target] ? 'L' + d.milestoneLevels[target].toString().replace(/^L/i, '') : '-')}</span></td>`).join('')}</tr>`; }); html += `</tbody></table></div>`;
     }
 
     const skillData = sorted.filter(d => ['DOPS', 'Mini-CEX', 'CbD', '實習總評量表', '筆試成績', '問卷調查'].includes(d.type));
-    const skillGroups = {}; skillData.forEach(d => { const gKey = `${d.studentName} | ${getSmartGroupName(d)}`; if (!skillGroups[gKey]) skillGroups[gKey] = []; skillGroups[gKey].push(d); });
+    const skillGroups = {}; skillData.forEach(d => { const gKey = `${escapeAssessmentText(d.studentName)} | ${getSmartGroupName(d)}`; if (!skillGroups[gKey]) skillGroups[gKey] = []; skillGroups[gKey].push(d); });
     for (let gKey in skillGroups) {
         const info = gKey.split(' | ');
-        html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><div class="flex items-center gap-2 mb-3 border-b border-slate-100 pb-1"><span class="text-[10px] font-black px-2 py-0.5 rounded bg-indigo-600 text-white uppercase italic shadow-sm tracking-tighter">同人進度比對</span><h3 class="text-sm font-black text-slate-800 tracking-tighter italic">學員：${info[0]} / 部位：${info[1]}</h3></div><table class="compare-table"><thead><tr><th class="w-1/6 text-slate-400 font-bold uppercase text-left tracking-tighter italic text-xs">對照項 / 日期</th>${skillGroups[gKey].map(d => `<th class="font-black text-slate-800 bg-slate-50">${d.date}<br><span class="text-[10px] opacity-60">(${d.type})</span></th>`).join('')}</tr></thead><tbody class="adaptive-text font-black text-slate-700">`;
+        html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><div class="flex items-center gap-2 mb-3 border-b border-slate-100 pb-1"><span class="text-[10px] font-black px-2 py-0.5 rounded bg-indigo-600 text-white uppercase italic shadow-sm tracking-tighter">同人進度比對</span><h3 class="text-sm font-black text-slate-800 tracking-tighter italic">學員：${escapeAssessmentText(info[0])} / 部位：${escapeAssessmentText(info[1])}</h3></div><table class="compare-table"><thead><tr><th class="w-1/6 text-slate-400 font-bold uppercase text-left tracking-tighter italic text-xs">對照項 / 日期</th>${skillGroups[gKey].map(d => `<th class="font-black text-slate-800 bg-slate-50">${escapeAssessmentText(d.date)}<br><span class="text-[10px] opacity-60">(${escapeAssessmentText(d.type)})</span></th>`).join('')}</tr></thead><tbody class="adaptive-text font-black text-slate-700">`;
         html += getStudentRow(skillGroups[gKey]); html += getTeacherRow(skillGroups[gKey]);
-        html += `<tr><td class="font-black text-slate-400 text-xs tracking-tighter text-center italic">項目題目</td>${skillGroups[gKey].map(d => `<td class="font-bold text-slate-700 bg-slate-50/30 text-xs tracking-tight">${d.skillName}</td>`).join('')}</tr>`;
-        html += `<tr><td class="font-black text-blue-600 italic text-center text-lg">總評分</td>${skillGroups[gKey].map(d => `<td class="text-center adaptive-score text-slate-800 font-mono tracking-tighter font-black">${d.scoreRaw}</td>`).join('')}</tr>`;
-        html += `<tr><td class="font-black text-emerald-700 text-center tracking-tighter">表現良好</td>${skillGroups[gKey].map(d => `<td class="adaptive-feedback text-slate-700 font-bold min-w-[200px] bg-emerald-50/10 leading-snug">${d.feedbackGood || '-'}</td>`).join('')}</tr>`;
-        html += `<tr><td class="font-black text-amber-700 text-center tracking-tighter">建議加強</td>${skillGroups[gKey].map(d => `<td class="adaptive-feedback text-slate-700 font-bold min-w-[200px] bg-amber-50/10 leading-snug">${d.feedbackNeeds || '-'}</td>`).join('')}</tr>`;
-        html += `<tr><td class="font-black text-blue-700 text-center tracking-tighter italic">學員回饋</td>${skillGroups[gKey].map(d => `<td class="adaptive-feedback text-slate-700 font-black min-w-[200px] bg-blue-50/10 leading-snug">${d.studentFeedback || '-'}</td>`).join('')}</tr>`;
+        html += `<tr><td class="font-black text-slate-400 text-xs tracking-tighter text-center italic">項目題目</td>${skillGroups[gKey].map(d => `<td class="font-bold text-slate-700 bg-slate-50/30 text-xs tracking-tight">${escapeAssessmentText(d.skillName)}</td>`).join('')}</tr>`;
+        html += `<tr><td class="font-black text-blue-600 italic text-center text-lg">總評分</td>${skillGroups[gKey].map(d => `<td class="text-center adaptive-score text-slate-800 font-mono tracking-tighter font-black">${escapeAssessmentText(d.scoreRaw)}</td>`).join('')}</tr>`;
+        html += `<tr><td class="font-black text-emerald-700 text-center tracking-tighter">表現良好</td>${skillGroups[gKey].map(d => `<td class="adaptive-feedback text-slate-700 font-bold min-w-[200px] bg-emerald-50/10 leading-snug">${escapeAssessmentText(d.feedbackGood || '-')}</td>`).join('')}</tr>`;
+        html += `<tr><td class="font-black text-amber-700 text-center tracking-tighter">建議加強</td>${skillGroups[gKey].map(d => `<td class="adaptive-feedback text-slate-700 font-bold min-w-[200px] bg-amber-50/10 leading-snug">${escapeAssessmentText(d.feedbackNeeds || '-')}</td>`).join('')}</tr>`;
+        html += `<tr><td class="font-black text-blue-700 text-center tracking-tighter italic">學員回饋</td>${skillGroups[gKey].map(d => `<td class="adaptive-feedback text-slate-700 font-black min-w-[200px] bg-blue-50/10 leading-snug">${escapeAssessmentText(d.studentFeedback || '-')}</td>`).join('')}</tr>`;
         html += `</tbody></table></div>`;
     }
 
     const epaData = sorted.filter(d => d.type === 'EPA');
-    const epaGroups = {}; epaData.forEach(d => { const g = `${d.studentName} | ${getSmartGroupName(d)}`; if (!epaGroups[g]) epaGroups[g] = []; epaGroups[g].push(d); });
+    const epaGroups = {}; epaData.forEach(d => { const g = `${escapeAssessmentText(d.studentName)} | ${getSmartGroupName(d)}`; if (!epaGroups[g]) epaGroups[g] = []; epaGroups[g].push(d); });
     for (let part in epaGroups) {
         const info = part.split(' | ');
-        html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><h3 class="text-xs font-black text-blue-600 mb-2 border-b border-blue-100 pb-1 w-fit uppercase italic tracking-tighter font-black tracking-widest">EPA 信賴成長：${info[0]} (${info[1]})</h3><table class="compare-table"><thead><tr><th class="w-1/6 text-slate-400 italic text-left tracking-tighter uppercase italic text-xs">日期 / 指標</th>${epaGroups[part].map(d => `<th class="font-black text-slate-800 bg-blue-50/50">${d.date}</th>`).join('')}</tr></thead><tbody class="adaptive-text">`; html += getStudentRow(epaGroups[part]); html += getTeacherRow(epaGroups[part]);[1, 2, 3].forEach(i => { html += `<tr><td class="font-bold text-blue-500 border-t border-slate-50 pt-2 uppercase tracking-tighter font-black text-center text-xs">OPA ${i}</td>${epaGroups[part].map(d => `<td class="text-center pt-2 border-t border-slate-50"><span class="px-4 py-1.5 rounded-xl font-black text-2xl border-2 shadow-sm ${getGradeStyle(d.opaScores[i])}">${d.opaScores[i] || '-'}</span></td>`).join('')}</tr>`; html += `<tr><td class="text-xs font-black text-slate-400 border-none italic pb-2 text-center tracking-tighter">質性建議</td>${epaGroups[part].map(d => `<td class="adaptive-feedback text-slate-700 min-w-[200px] border-none pb-2 bg-slate-50/20 font-medium leading-tight">${d.opaFeedbacks[i] || '-'}</td>`).join('')}</tr>`; }); html += `</tbody></table></div>`;
+        html += `<div class="bg-white rounded-3xl p-4 shadow-xl mb-8 border border-slate-200 overflow-x-auto slide-up"><h3 class="text-xs font-black text-blue-600 mb-2 border-b border-blue-100 pb-1 w-fit uppercase italic tracking-tighter font-black tracking-widest">EPA 信賴成長：${escapeAssessmentText(info[0])} (${escapeAssessmentText(info[1])})</h3><table class="compare-table"><thead><tr><th class="w-1/6 text-slate-400 italic text-left tracking-tighter uppercase italic text-xs">日期 / 指標</th>${epaGroups[part].map(d => `<th class="font-black text-slate-800 bg-blue-50/50">${escapeAssessmentText(d.date)}</th>`).join('')}</tr></thead><tbody class="adaptive-text">`; html += getStudentRow(epaGroups[part]); html += getTeacherRow(epaGroups[part]);[1, 2, 3].forEach(i => { html += `<tr><td class="font-bold text-blue-500 border-t border-slate-50 pt-2 uppercase tracking-tighter font-black text-center text-xs">OPA ${i}</td>${epaGroups[part].map(d => `<td class="text-center pt-2 border-t border-slate-50"><span class="px-4 py-1.5 rounded-xl font-black text-2xl border-2 shadow-sm ${getGradeStyle(d.opaScores[i])}">${escapeAssessmentText(d.opaScores[i] || '-')}</span></td>`).join('')}</tr>`; html += `<tr><td class="text-xs font-black text-slate-400 border-none italic pb-2 text-center tracking-tighter">質性建議</td>${epaGroups[part].map(d => `<td class="adaptive-feedback text-slate-700 min-w-[200px] border-none pb-2 bg-slate-50/20 font-medium leading-tight">${escapeAssessmentText(d.opaFeedbacks[i] || '-')}</td>`).join('')}</tr>`; }); html += `</tbody></table></div>`;
     }
     container.innerHTML = html;
 }
 
-function setFilter(f) { currentFilter = f; document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active-filter')); const target = document.getElementById('f_' + f); if (target) target.classList.add('active-filter'); switchView(currentViewMode()); }
-function setStudentFilter(val) { currentStudentFilter = val; switchView(currentViewMode()); }
+function setFilter(value) {
+    currentFilter = value;
+    switchView(currentViewMode());
+}
+
 function setTrainingFilter(val) { currentTrainingFilter = val; switchView(currentViewMode()); }
+function setInstrumentFilter(value) {
+    currentInstrumentFilter = value;
+    switchView(currentViewMode());
+}
+
 function toggleSort() { sortDirection = sortDirection === 'desc' ? 'asc' : 'desc'; const icon = document.getElementById('sortIcon'); if (icon) icon.className = `fas fa-sort-amount-${sortDirection === 'desc' ? 'down' : 'up'} text-teal-500`; const txt = document.getElementById('sortText'); if (txt) txt.innerText = `日期：${sortDirection === 'desc' ? '新到舊' : '舊到新'}`; switchView(currentViewMode()); }
 function currentViewMode() { if (document.getElementById('cardModeBtn')?.classList.contains('mode-active')) return 'card'; if (document.getElementById('compareModeBtn')?.classList.contains('mode-active')) return 'compare'; return 'chart'; }
-function sortDataList(list) { return list.sort((a, b) => sortDirection === 'desc' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)); }
+function sortDataList(list) {
+    return list.sort((a, b) => {
+        const order = String(a.date ?? '').localeCompare(String(b.date ?? ''));
+        return sortDirection === 'desc' ? -order : order;
+    });
+}
 
 /* Initialization and Event Listeners */
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => { if (dropZone) dropZone.addEventListener(e, (evt) => { evt.preventDefault(); evt.stopPropagation(); }, false); });
-if (dropZone) dropZone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files));
-if (dropZone) dropZone.onclick = () => fileInput.click();
-if (fileInput) fileInput.onchange = (e) => handleFiles(e.target.files);
+const folderImportInput = document.getElementById('folderImportInput');
+const chooseImportFolder = document.getElementById('chooseImportFolder');
+let pendingImport = Promise.resolve();
+
+function queuePortfolioImport(collectFiles, emptyLabel) {
+    // Start collecting immediately while the picker or drop still exposes the files.
+    const filesReady = Promise.resolve(collectFiles()).then(files => ({ files }), error => ({ error }));
+    pendingImport = pendingImport.catch(console.error).then(async () => {
+        const { files, error } = await filesReady;
+        if (error || (!files.length && emptyLabel)) {
+            if (error) console.error('無法讀取拖放資料：', error);
+            showImportStatus({ added: 0, duplicates: 0, failedFiles: [emptyLabel || '拖放的檔案'] });
+            return;
+        }
+        await handleFiles(files);
+    });
+}
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
+    dropZone?.addEventListener(name, event => {
+        event.preventDefault();
+        event.stopPropagation();
+    });
+});
+dropZone?.addEventListener('drop', event => {
+    queuePortfolioImport(() => readPortfolioDrop(event.dataTransfer), '拖放項目中沒有可讀取的 HTML 或 CSV');
+});
+if (dropZone && fileInput) dropZone.onclick = () => fileInput.click();
+fileInput?.addEventListener('change', () => {
+    const files = Array.from(fileInput.files);
+    fileInput.value = '';
+    queuePortfolioImport(() => files);
+});
+chooseImportFolder?.addEventListener('click', () => folderImportInput?.click());
+folderImportInput?.addEventListener('change', () => {
+    const files = Array.from(folderImportInput.files);
+    const supported = files.filter(file => PORTFOLIO_FILE_EXTENSION.test(file.name));
+    const folderName = files[0]?.webkitRelativePath.split('/')[0] || '選取的資料夾';
+    folderImportInput.value = '';
+    queuePortfolioImport(() => supported, folderName);
+});
 
 async function handleFiles(files) {
     if (!files || files.length === 0) return;
@@ -717,22 +743,18 @@ async function handleFiles(files) {
     const knownContent = new Set(historyData.map(getRecordContentKey));
     const usedIds = new Set(historyData.map(item => item && item.id).filter(id => id !== undefined && id !== null));
     const overlay = typeof document !== 'undefined' ? document.getElementById('progressOverlay') : null;
-    const importStatus = typeof document !== 'undefined' ? document.getElementById('importStatus') : null;
     if (overlay) overlay.hidden = false;
-    if (importStatus) {
-        importStatus.textContent = '';
-        if (importStatus.dataset) importStatus.dataset.state = '';
-    }
+    clearImportStatus();
 
     try {
         for (const file of Array.from(files)) {
             const fileName = file && file.name ? file.name : '未命名檔案';
             try {
-                if (!file || typeof file.text !== 'function' || !fileName.toLowerCase().endsWith('.csv')) {
-                    throw new Error('僅支援 CSV 檔案');
+                if (!file || typeof file.text !== 'function' || !PORTFOLIO_FILE_EXTENSION.test(fileName)) {
+                    throw new Error('僅支援 HTML 或 CSV 檔案');
                 }
 
-                const records = recordsFromImportResult(analyzeCSV(await file.text()));
+                const records = recordsFromImportResult(readPortfolioFile(await file.text(), fileName));
                 const addedRecords = [];
                 records.forEach(record => {
                     const contentKey = getRecordContentKey(record);
@@ -764,36 +786,36 @@ async function handleFiles(files) {
 
     updateFilterOptions();
     switchView('card');
-    if (importStatus) {
-        importStatus.textContent = formatImportSummary(summary);
-        if (importStatus.dataset) importStatus.dataset.state = getImportSummaryState(summary);
-    }
+    showImportStatus(summary);
     return summary;
 }
 
 function updateFilterOptions() {
-    const sSelect = document.getElementById('studentFilter');
-    const tSelect = document.getElementById('trainingFilter');
-    if (!sSelect || !tSelect) return;
-    const students = [...new Set(historyData.map(d => d.studentName))].sort();
-    const trainings = [...new Set(historyData.map(d => d.trainingType))].sort();
-    sSelect.innerHTML = '<option value="all">所有學員</option>';
-    students.forEach(s => { sSelect.innerHTML += `<option value="${s}" ${s === currentStudentFilter ? 'selected' : ''}>${s}</option>`; });
-    tSelect.innerHTML = '<option value="all">所有訓練別</option>';
-    trainings.forEach(t => { tSelect.innerHTML += `<option value="${t}" ${t === currentTrainingFilter ? 'selected' : ''}>${t}</option>`; });
+    const trainings = [...new Set(historyData.map(record => record.trainingType))].sort();
+    const instruments = [...new Set(historyData.map(record => record.instrumentType).filter(Boolean))].sort();
+    if (!trainings.includes(currentTrainingFilter)) currentTrainingFilter = 'all';
+    if (!instruments.includes(currentInstrumentFilter)) currentInstrumentFilter = 'all';
+    setSelectOptions('trainingFilter', ['all', '所有訓練別'], trainings, currentTrainingFilter);
+    setSelectOptions('instrumentFilter', ['all', '所有儀器別'], instruments, currentInstrumentFilter);
+}
+
+function setSelectOptions(id, defaultOption, values, selected) {
+    const select = document.getElementById(id);
+    select.innerHTML = '';
+    for (const [value, label] of [defaultOption, ...values.map(value => [value, value])]) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = label;
+        select.appendChild(option);
+    }
+    select.value = selected;
 }
 
 function getFilteredData() {
     let data = currentFilter === 'all' ? historyData : historyData.filter(d => d.type === currentFilter);
-    if (currentStudentFilter !== 'all') data = data.filter(d => d.studentName === currentStudentFilter);
     if (currentTrainingFilter !== 'all') data = data.filter(d => d.trainingType === currentTrainingFilter);
+    if (currentInstrumentFilter !== 'all') data = data.filter(d => d.instrumentType === currentInstrumentFilter);
     return data;
-}
-
-function escapeReportText(value) {
-    return String(value ?? '').replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
 }
 
 function createRecordSummary(item) {
@@ -807,9 +829,9 @@ function createRecordSummary(item) {
         ['表現良好項目', item.feedbackGood], ['建議加強項目', item.feedbackNeeds],
         ['學員回饋／紀錄內容', item.studentFeedback]
     ];
-    card.innerHTML = `<div class="record-summary-inner"><h3 class="adaptive-title">${escapeReportText(item.type)}｜${escapeReportText(item.title)}</h3>
+    card.innerHTML = `<div class="record-summary-inner"><h3 class="adaptive-title">${escapeAssessmentText(item.type)}｜${escapeAssessmentText(item.title)}</h3>
         <dl>${fields.filter(([, value]) => value !== undefined && value !== null && value !== '').map(([label, value]) =>
-            `<div class="record-field"><dt>${escapeReportText(label)}</dt><dd>${escapeReportText(value)}</dd></div>`).join('')}</dl></div>`;
+            `<div class="record-field"><dt>${escapeAssessmentText(label)}</dt><dd>${escapeAssessmentText(value)}</dd></div>`).join('')}</dl></div>`;
     document.getElementById('chartGrid').appendChild(card);
 }
 
@@ -828,7 +850,13 @@ function printAccreditationReport() {
         return;
     }
 
-    // Switch to chart view to generate charts
+    initializeChartSelection();
+    const reportData = getIncludedRecords();
+    if (!reportData.length) {
+        alert('目前沒有納入可列印的紀錄。請調整篩選條件或報告勾選。');
+        return;
+    }
+
     switchView('chart');
 
     // Wait for charts to render
@@ -837,11 +865,6 @@ function printAccreditationReport() {
         const chartGrid = document.getElementById('chartGrid');
         if (!chartGrid) return;
 
-        const reportData = getFilteredData().filter(d => selectedChartItems.has(d.id));
-        if (!reportData.length) {
-            alert('目前沒有勾選可列印的紀錄，請先選擇成果展項目');
-            return;
-        }
         const report = getReportMetadata(reportData);
 
         // 移除舊的 header / footer（避免重複）
@@ -854,8 +877,8 @@ function printAccreditationReport() {
             <div class="print-header-inner">
                 <img class="print-logo" src="logo.png" alt="輔仁大學附設醫院">
                 <h1>醫事放射師PGY成果展示報告</h1>
-                <p>受評學員：${escapeReportText(report.studentNames)}</p>
-                <p>評量資料涵蓋期間：${escapeReportText(report.period)}</p>
+                <p>受評學員：${escapeAssessmentText(report.studentNames)}</p>
+                <p>評量資料涵蓋期間：${escapeAssessmentText(report.period)}</p>
                 <p>納入紀錄：${report.count} 筆</p>
                 <p class="print-sub">評量展示助手 產出 | 本報告依目前篩選及勾選的評量紀錄產出</p>
             </div>
@@ -879,6 +902,11 @@ function printAccreditationReport() {
         }
 
         if (document.getElementById('printContainer')) return;
+        generateExhibitionDashboard({ refreshSelector: false, reportRecords: reportData });
+        for (const chart of Object.values(charts)) {
+            chart.stop();
+            chart.update('none');
+        }
         chartGrid.insertBefore(printHeader, chartGrid.firstChild);
 
         // === 核彈級做法：把 chartGrid 搬到 body 下面，隱藏其他所有東西 ===
@@ -913,6 +941,7 @@ function printAccreditationReport() {
                 delete el.dataset.printHidden;
             });
             window.onafterprint = null;
+            if (currentViewMode() === 'chart') generateExhibitionDashboard();
         };
 
         // Trigger print

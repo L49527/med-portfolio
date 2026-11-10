@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
 
-const appCode = fs.readFileSync(`${__dirname}/app.js`, 'utf8');
+const scriptFiles = ['parser.js', 'legacy-html-parser.js', 'portfolio-import.js', 'app.js'];
 
 function makeElement() {
     const classes = new Set();
@@ -75,7 +75,9 @@ function createHarness() {
     };
     context.globalThis = context;
     vm.createContext(context);
-    vm.runInContext(appCode, context, { filename: 'app.js' });
+    for (const filename of scriptFiles) {
+        vm.runInContext(fs.readFileSync(`${__dirname}/${filename}`, 'utf8'), context, { filename });
+    }
     vm.runInContext('switchView = function () {}; generateExhibitionDashboard = function () {};', context);
     return { context, elements, alerts };
 }
@@ -140,7 +142,7 @@ async function run() {
     assert.strictEqual(vm.runInContext('historyData.length', context), 2);
 
     // All-none remains none after redraw/filter changes.
-    vm.runInContext('selectAllChartItems(false); populateChartItemSelector(); currentStudentFilter = "甲"; populateChartItemSelector();', context);
+    vm.runInContext('selectAllChartItems(false); populateChartItemSelector(); setFilter("DOPS"); populateChartItemSelector();', context);
     assert.deepStrictEqual(selectedIds(context), []);
 
     // Newly imported records are selected even after an all-none state.
@@ -184,10 +186,10 @@ async function run() {
     assert.deepStrictEqual(alerts, []);
 
     // Clear resets filters and selection so the app can be reused.
-    vm.runInContext('currentFilter = "DOPS"; currentStudentFilter = "甲"; currentTrainingFilter = "訓練A"; selectedChartItems.add("record-a"); clearHistory();', context);
+    vm.runInContext('currentFilter = "DOPS"; currentTrainingFilter = "訓練A"; currentInstrumentFilter = "CT"; selectedChartItems.add("record-a"); clearHistory();', context);
     assert.strictEqual(vm.runInContext('historyData.length', context), 0);
     assert.deepStrictEqual(selectedIds(context), []);
-    assert.deepStrictEqual(JSON.parse(vm.runInContext('JSON.stringify([currentFilter, currentStudentFilter, currentTrainingFilter, chartSelectionInitialized])', context)), ['all', 'all', 'all', false]);
+    assert.deepStrictEqual(JSON.parse(vm.runInContext('JSON.stringify([currentFilter, currentTrainingFilter, currentInstrumentFilter, chartSelectionInitialized])', context)), ['all', 'all', 'all', false]);
     assert.strictEqual(elements.get('importStatus').textContent, '');
     assert.strictEqual(elements.get('importStatus').dataset.state, undefined);
     assert.deepStrictEqual(alerts, []);

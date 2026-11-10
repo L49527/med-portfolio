@@ -97,39 +97,47 @@ body {
     width: 100%;
 }
 
-.filter-btn {
-    background-color: #f1f5f9;
-    color: #64748b;
-    border: 2px solid #e2e8f0;
-    padding: clamp(6px, 0.7vw, 10px) clamp(14px, 1.2vw, 20px);
-    font-size: clamp(13px, 1vw, 16px);
-    font-weight: 900;
-    border-radius: 9999px;
-    transition: all 0.2s;
+@media screen {
+    .chart-card.single-score-chart { padding: 1.25rem; }
+    .single-score-chart h3 { margin-bottom: 1rem; }
+    .single-score-chart .chart-canvas-wrap { height: clamp(180px, 36vh, 300px); }
 }
 
-.filter-btn.active-filter {
-    background-color: #4DB6AC !important;
-    color: white !important;
-    border-color: #4DB6AC !important;
-    box-shadow: 0 4px 10px rgba(77, 182, 172, 0.3);
+.filter-fields {
+    display: flex;
+    flex: 1 1 22rem;
+    flex-wrap: wrap;
+    gap: 12px;
+    min-width: 0;
+    max-width: 52rem;
+}
+
+.filter-fields label {
+    display: flex;
+    flex: 1 1 10rem;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    color: #1e293b;
+    font-weight: 700;
 }
 
 .custom-select {
-    background-color: #fff;
-    border: 2px solid #e2e8f0;
-    border-radius: 9999px;
-    padding: 6px 14px;
-    font-weight: 900;
+    width: 100%;
+    min-height: 44px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    background: #fff;
+    padding: 6px 12px;
     color: #1e293b;
-    outline: none;
-    transition: all 0.2s;
     cursor: pointer;
-    font-size: 13px;
 }
 
-.custom-select:hover {
-    border-color: #4DB6AC;
+.custom-select:hover { border-color: #4db6ac; }
+
+.custom-select:focus-visible {
+    outline: 2px solid #0f766e;
+    outline-offset: 2px;
 }
 
 .mode-active {
@@ -185,8 +193,12 @@ body {
     text-align: center;
 }
 
-#importStatus {
+.import-status-row {
+    position: relative;
     flex-shrink: 0;
+}
+
+#importStatus {
     margin: 0;
     overflow-wrap: anywhere;
 }
@@ -200,16 +212,32 @@ body {
 }
 
 #importStatus[data-state="partial"] {
+    padding-inline-end: 5rem;
     border-color: #fde68a;
     background: #fffbeb;
     color: #92400e;
 }
 
 #importStatus[data-state="error"] {
+    padding-inline-end: 5rem;
     border-color: #fecaca;
     background: #fef2f2;
     color: #991b1b;
 }
+
+#dismissImportStatus {
+    position: absolute;
+    inset-inline-end: .75rem;
+    inset-block-start: 50%;
+    transform: translateY(-50%);
+    border-radius: 6px;
+    padding: .25rem .55rem;
+    color: #7f1d1d;
+    font-weight: 700;
+}
+
+#dismissImportStatus:hover { background: #fff; }
+#dismissImportStatus:focus-visible { outline: 2px solid currentColor; }
 
 /* Print Mode Styles for Accreditation */
 @media print {
@@ -263,6 +291,9 @@ body {
 
     /* 每張圖一頁、置中、填滿 */
     .chart-card {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
         page-break-inside: avoid !important;
         page-break-after: always !important;
         box-shadow: none !important;
@@ -386,43 +417,50 @@ body {
     display: none;
 }
 
-/* Chart Item Selector Styles */
-.chart-item-checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    background: white;
-    border: 2px solid #e2e8f0;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.15s;
-    font-size: 11px;
+.report-scope-count {
+    flex: none;
+    padding: 10px 16px;
+    color: #334155;
     font-weight: 700;
 }
+#chartGrid canvas { max-width: 100%; }
+#chartGrid .record-empty { padding: 24px; text-align: center; color: #475569; }
 
-.chart-item-checkbox:hover {
-    border-color: #6366f1;
-    background: #eef2ff;
+.report-selection {
+    flex: none;
+    margin: 0 16px;
+    border: 1px solid #dbe4ea;
+    border-radius: 8px;
+    background: #fff;
 }
+.report-selection summary { padding: 10px 14px; font-weight: 650; cursor: pointer; color: #334155; }
+.report-selection summary:hover { color: #0f766e; }
+.report-selection :is(summary, button, input):focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }
+.report-selection-body { padding: 0 14px 14px; }
+.report-selection-body p { margin: 0 0 10px; color: #475569; }
+.report-selection-list { max-height: 15rem; overflow-y: auto; border-top: 1px solid #dbe4ea; margin-top: 10px; }
+.chart-item-checkbox {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px 12px;
+    min-height: 42px;
+    padding: 7px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+.chart-item-checkbox:hover { background: #f8fafc; }
+.chart-item-checkbox input { accent-color: #0f766e; width: 1rem; height: 1rem; }
 
-.chart-item-checkbox.selected {
-    border-color: #6366f1;
-    background: #6366f1;
-    color: white;
-}
-
-.chart-item-checkbox input {
-    display: none;
-}
-
-.chart-item-checkbox .type-tag {
-    font-size: 9px;
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-weight: 900;
-    text-transform: uppercase;
-}
+.record-type { color: #475569; font-weight: 650; }
+.record-type[data-type="DOPS"] { color: #6d28d9; }
+.record-type[data-type="Mini-CEX"] { color: #9a3412; }
+.record-type[data-type="CbD"] { color: #047857; }
+.record-type[data-type="EPA"] { color: #1d4ed8; }
+.record-type[data-type="Milestone"] { color: #0f766e; }
+.record-type[data-type="筆試成績"] { color: #4338ca; }
+.record-type[data-type="問卷調查"] { color: #be185d; }
 /* Text records remain readable and can span pages without clipping feedback. */
 .record-summary { grid-column: 1 / -1; }
 .record-summary-inner { width: 100%; min-width: 0; }
