@@ -6,7 +6,7 @@ const nodes = {};
 const makeNode = () => ({ innerHTML: '', children: [], dataset: {}, classList: { add() {}, remove() {} }, addEventListener() {}, querySelectorAll() { return this.children; }, appendChild(node) { this.children.push(node); } });
 const document = { getElementById(id) { return nodes[id] ||= makeNode(); }, createElement: makeNode, querySelectorAll() { return []; } };
 const context = vm.createContext({ document, console, window: {}, setTimeout, alert() {} });
-for (const file of ['parser.js', 'legacy-html-parser.js', 'portfolio-import.js', 'app.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), context);
+for (const file of ['parser.js', 'legacy-html-parser.js', 'portfolio-import.js', 'app.js']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'), context);
 vm.runInContext(`
 const samples = [
  {id:'a',type:'實習總評量表',title:'總評量',date:'2024-07-01',studentName:'甲',scoreRaw:'85',studentFeedback:'原文'},

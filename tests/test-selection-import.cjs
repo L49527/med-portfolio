@@ -1,5 +1,6 @@
 const assert = require('assert');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
 
 const scriptFiles = ['parser.js', 'legacy-html-parser.js', 'portfolio-import.js', 'app.js'];
@@ -76,7 +77,7 @@ function createHarness() {
     context.globalThis = context;
     vm.createContext(context);
     for (const filename of scriptFiles) {
-        vm.runInContext(fs.readFileSync(`${__dirname}/${filename}`, 'utf8'), context, { filename });
+        vm.runInContext(fs.readFileSync(path.join(__dirname, '..', filename), 'utf8'), context, { filename });
     }
     vm.runInContext('switchView = function () {}; generateExhibitionDashboard = function () {};', context);
     return { context, elements, alerts };
