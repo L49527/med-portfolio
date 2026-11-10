@@ -709,8 +709,9 @@ function queuePortfolioImport(collectFiles, emptyLabel) {
             showImportStatus({ added: 0, duplicates: 0, failedFiles: [emptyLabel || '拖放的檔案'] });
             return;
         }
-        await handleFiles(files);
+        return handleFiles(files);
     });
+    return pendingImport;
 }
 
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(name => {
@@ -736,6 +737,7 @@ folderImportInput?.addEventListener('change', () => {
     folderImportInput.value = '';
     queuePortfolioImport(() => supported, folderName);
 });
+initializeEPortfolioTransfer();
 
 async function handleFiles(files) {
     if (!files || files.length === 0) return;

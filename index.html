@@ -64,7 +64,7 @@
                 <i id="sidebarIcon" class="fas fa-angles-right text-xl"></i>
                 <span id="sidebarBtnLabel" class="text-[9px] font-black uppercase vertical-text">開啟匯入區</span>
             </button>
-            <div id="sidebarContent" class="p-6 flex-1 overflow-hidden flex flex-col">
+            <div id="sidebarContent" class="p-6 flex-1 overflow-y-auto flex flex-col">
                 <div class="mb-4 text-teal-600 font-bold flex items-center gap-2 text-base"><i
                         class="fas fa-file-circle-plus"></i><span>批次資料匯入</span></div>
                 <div id="dropZone"
@@ -83,6 +83,11 @@
                     </button>
                     <input type="file" id="folderImportInput" webkitdirectory multiple class="hidden">
                 </div>
+                <details class="mt-4 flex-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <summary class="cursor-pointer font-bold text-teal-800">從 e-Portfolio 直接匯入</summary>
+                    <p id="eportfolioBookmarkNotice" class="mt-2 text-slate-600">請用 HTTPS 網頁版開啟評量展示助手，以建立書籤。</p>
+                    <a id="eportfolioBookmark" class="mt-2 font-bold text-teal-800 underline" draggable="true" hidden>匯入 e-Portfolio 表單</a>
+                </details>
             </div>
         </div>
 
@@ -127,6 +132,7 @@
                 <p id="importStatus" role="status" aria-atomic="true"></p>
                 <button type="button" id="dismissImportStatus" onclick="clearImportStatus()" hidden>關閉</button>
             </div>
+            <p id="eportfolioTransferStatus" class="empty:hidden bg-teal-50 px-6 py-2 text-sm font-bold text-teal-800" role="status"></p>
 
             <div class="flex-1 p-6 overflow-y-auto" id="historyContainer">
                 <div id="emptyState"

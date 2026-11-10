@@ -1,5 +1,146 @@
 const PORTFOLIO_FILE_EXTENSION = /\.(?:html?|csv)$/i;
 
+// This function is serialized into the user's bookmark and runs on the e-Portfolio page.
+async function sendEPortfolioForms(appUrl, pairingKey) {
+    const forms = [];
+    for (const link of document.querySelectorAll('.modal-body a')) {
+        if (!link.getClientRects().length) continue;
+        const handler = [link.getAttribute('href'), link.getAttribute('onclick')].join(' ');
+        const args = handler.match(/\bshowFillForm\s*\(([^)]*)\)/)?.[1]
+            .split(',').map(value => value.trim().replace(/^(['"])(.*)\1$/, '$2'));
+        if (!args || args.length < 4 || !args[0]) continue;
+        const url = new URL('../form/prompt/fillForm', document.baseURI);
+        url.search = new URLSearchParams({
+            isWindowOpen: 'true', formKey: args[0], fromPage: 'classForm',
+            refTable: args[2], refId: args[3]
+        });
+        const name = link.innerText.trim().replace(/[\\/:*?"<>|]/g, '_') || '表單-' + (forms.length + 1);
+        forms.push({ url, name: name + '.html' });
+    }
+
+    const destination = new URL(appUrl);
+    if (!forms.length || destination.origin === location.origin || !/^https?:$/.test(location.protocol)) {
+        alert('請先在 e-Portfolio 開啟「表單明細」，再點此書籤。');
+        return;
+    }
+    destination.hash = new URLSearchParams({ epImport: pairingKey, source: location.origin });
+    const receiver = window.open(destination.href, '_blank');
+    if (!receiver) {
+        alert('瀏覽器阻擋了評量展示助手。請允許 e-Portfolio 開啟彈出式視窗，再點一次書籤。');
+        return;
+    }
+
+    const port = await new Promise(resolve => {
+        const timer = setTimeout(() => {
+            window.removeEventListener('message', onReady);
+            resolve(null);
+        }, 25_000);
+        function onReady(event) {
+            if (event.source !== receiver || event.origin !== destination.origin ||
+                event.data?.type !== 'med-portfolio-ready' || event.data.key !== pairingKey || !event.ports[0]) return;
+            clearTimeout(timer);
+            window.removeEventListener('message', onReady);
+            resolve(event.ports[0]);
+        }
+        window.addEventListener('message', onReady);
+    });
+    if (!port) {
+        alert('評量展示助手尚未連線。請確認網頁可正常開啟，並從該頁重新加入書籤。');
+        return;
+    }
+
+    const files = [];
+    const failedFiles = [];
+    for (const { url, name } of forms) {
+        if (receiver.closed) return;
+        port.postMessage({ processed: files.length + failedFiles.length, total: forms.length });
+        try {
+            const response = await fetch(url, { mode: 'same-origin', signal: AbortSignal.timeout(20_000) });
+            if (!response.ok) throw new Error('讀取表單失敗');
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const isAssessment = Array.from(doc.querySelectorAll('dt')).some(label =>
+                /^訓練(?:類別|計畫)\s*[:：]?$/.test(label.textContent.trim()) &&
+                label.nextElementSibling?.tagName === 'DD');
+            if (!isAssessment) throw new Error('回傳頁面缺少評量表欄位');
+            files.push(new File([html], name, { type: 'text/html' }));
+        } catch {
+            failedFiles.push(name);
+        }
+        if (files.length + failedFiles.length < forms.length) await new Promise(resolve => setTimeout(resolve, 800));
+    }
+    port.postMessage({ files, failedFiles });
+}
+
+function initializeEPortfolioTransfer() {
+    const bookmark = document.getElementById('eportfolioBookmark');
+    if (!bookmark || !window.isSecureContext || !/^https?:$/.test(window.location?.protocol)) return;
+
+    const appUrl = new URL(window.location.href);
+    const params = new URLSearchParams(appUrl.hash.slice(1));
+    let key;
+    try {
+        const storageKey = 'med-portfolio-eportfolio-bookmark';
+        key = localStorage.getItem(storageKey);
+        if (!/^[a-f0-9]{32}$/.test(key ?? '')) {
+            key = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+            localStorage.setItem(storageKey, key);
+        }
+    } catch {
+        document.getElementById('eportfolioBookmarkNotice').textContent = '請允許這個網頁儲存書籤設定後再使用。';
+        return;
+    }
+
+    appUrl.hash = '';
+    const command = 'void (' + sendEPortfolioForms.toString() + ')(' +
+        JSON.stringify(appUrl.href) + ',' + JSON.stringify(key) + ')';
+    bookmark.href = 'javascript:' + encodeURIComponent(command);
+    bookmark.addEventListener('click', event => event.preventDefault());
+    bookmark.hidden = false;
+    document.getElementById('eportfolioBookmarkNotice').textContent =
+        '把下方連結拖到瀏覽器書籤列。回 e-Portfolio 開啟「表單明細」，再點書籤。';
+
+    if (!params.has('epImport')) return;
+    history.replaceState(null, '', appUrl.href);
+    const status = document.getElementById('eportfolioTransferStatus');
+    const source = params.get('source');
+    const opener = window.opener;
+    if (params.get('epImport') !== key || !/^https?:\/\/[^/]+$/.test(source ?? '') || !opener) {
+        status.textContent = '無法連線。請在這個瀏覽器重新加入書籤，再從 e-Portfolio 開啟。';
+        return;
+    }
+
+    const channel = new MessageChannel();
+    const port = channel.port1;
+    const interrupted = () => {
+        port.close();
+        status.textContent = '接收已中斷。請回 e-Portfolio 確認登入狀態，再點一次書籤。';
+    };
+    let timer = setTimeout(interrupted, 90_000);
+    status.textContent = '已連線，等待 e-Portfolio 讀取表單…';
+    port.onmessage = async ({ data }) => {
+        if (Number.isSafeInteger(data?.processed) && Number.isSafeInteger(data.total)) {
+            clearTimeout(timer);
+            timer = setTimeout(interrupted, 90_000);
+            status.textContent = '正在讀取 e-Portfolio 表單 ' + data.processed + '／' + data.total;
+            return;
+        }
+        if (!Array.isArray(data?.files) || !Array.isArray(data.failedFiles) ||
+            !data.files.every(file => file instanceof File && /\.html$/i.test(file.name)) ||
+            !data.failedFiles.every(name => typeof name === 'string')) return;
+
+        clearTimeout(timer);
+        port.close();
+        status.textContent = '';
+        const summary = (await queuePortfolioImport(() => data.files)) ??
+            { added: 0, duplicates: 0, failedFiles: [] };
+        if (data.failedFiles.length) {
+            showImportStatus({ ...summary, failedFiles: [...data.failedFiles, ...summary.failedFiles] });
+        }
+    };
+    opener.postMessage({ type: 'med-portfolio-ready', key }, source, [channel.port2]);
+}
+
 function isExamQueryCSV(text, fileName) {
     const [header = '', firstRow = ''] = text.split(/\r?\n/, 2);
     const headers = header.replace(/^\uFEFF/, '').split(',')
