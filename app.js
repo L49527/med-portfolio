@@ -837,7 +837,15 @@ function createRecordSummary(item) {
 
 function getReportMetadata(records) {
     const dates = records.map(d => d.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== '1900-01-01').sort();
+    const programs = new Set(records.map(record => normalizeTrainingProgram(record.trainingProgram)));
+    let title = '醫事放射成果展示報告';
+    if (!programs.has('')) {
+        if (programs.size === 2) title = '醫事放射UGY／PGY成果展示報告';
+        else if (programs.has('UGY')) title = '醫事放射UGY成果展示報告';
+        else if (programs.has('PGY')) title = '醫事放射師PGY成果展示報告';
+    }
     return {
+        title,
         studentNames: [...new Set(records.map(d => d.studentName))].sort().join('、') || '未知學員',
         period: dates.length ? `${dates[0]} 至 ${dates[dates.length - 1]}` : '未提供',
         count: records.length
@@ -876,7 +884,7 @@ function printAccreditationReport() {
         printHeader.innerHTML = `
             <div class="print-header-inner">
                 <img class="print-logo" src="logo.png" alt="輔仁大學附設醫院">
-                <h1>醫事放射師PGY成果展示報告</h1>
+                <h1>${escapeAssessmentText(report.title)}</h1>
                 <p>受評學員：${escapeAssessmentText(report.studentNames)}</p>
                 <p>評量資料涵蓋期間：${escapeAssessmentText(report.period)}</p>
                 <p>納入紀錄：${report.count} 筆</p>

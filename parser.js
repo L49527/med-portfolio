@@ -185,6 +185,11 @@ function buildItemDetails(item) {
     }
 }
 
+function normalizeTrainingProgram(value) {
+    const label = String(value ?? '').normalize('NFKC').trim().toUpperCase();
+    return label.match(/^(?:醫事放射師?\s*)?(UGY|PGY)$/)?.[1] || '';
+}
+
 function analyzeCSV(content) {
     try {
         // Remove BOM if present
@@ -274,6 +279,7 @@ function analyzeCSV(content) {
                     studentFeedback: getValue("學員回饋意見") || getValue("評語/心得") || '',
                     teacherName: getValue("教師/主持人") || '未註明',
                     trainingType: getValue("訓練別編號") || getValue("科別") || '未分類',
+                    trainingProgram: normalizeTrainingProgram(getValue("訓練類別")),
                     instrumentType: (instRaw || '').includes('總評估') ? '總評估' : (instRaw || ''),
                     stationDetails: getValue("各站成績") || '', // 新增：支援 v5.1 各站成績 (基礎課程細項)
                     milestoneLevels: {},
@@ -332,9 +338,11 @@ function analyzeCSV(content) {
             }
         } else {
             // Original format (exported by this tool)
+            const trainingProgramColumn = headers.indexOf('訓練類別');
             const dataRows = rows.filter(r => r.length > 5 && r[0] !== "評量日期");
             dataRows.forEach(r => {
                 let item = { id: Math.random().toString(36).substr(2, 9), date: r[0], studentName: r[1], type: r[2], title: r[3], scoreRaw: r[4], skillName: r[5], opaScores: { 1: r[6], 2: r[8], 3: r[10] }, opaFeedbacks: { 1: r[7], 2: r[9], 3: r[11] }, feedbackGood: r[12], feedbackNeeds: r[13], studentFeedback: r[14], teacherName: r[15] || '未註明', trainingType: r[16] || '未分類', instrumentType: r[17] || '', milestoneLevels: {}, details: [] };
+                item.trainingProgram = normalizeTrainingProgram(r[trainingProgramColumn]);
                 TARGET_MILESTONES.forEach((m, idx) => { if (r[18 + idx]) item.milestoneLevels[m] = r[18 + idx]; });
                 buildItemDetails(item); res.push(item);
             });

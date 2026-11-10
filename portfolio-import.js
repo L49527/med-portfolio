@@ -74,14 +74,15 @@ function exportPortfolioCSV() {
         '執行日期', '學員姓名', '教師/主持人', '類型', '科別', '表單標題', '總分',
         'OPA1', 'OPA1回饋', 'OPA2', 'OPA2回饋', 'OPA3', 'OPA3回饋',
         '表現良好項目', '建議加強項目', '學員回饋意見', '訓練別編號',
-        '儀器別', '各站成績', '操作項目', ...TARGET_MILESTONES
+        '儀器別', '各站成績', '操作項目', ...TARGET_MILESTONES, '訓練類別'
     ];
     const rows = historyData.map(item => [
         item.date, item.studentName, item.teacherName, item.type, item.trainingType, item.title, item.scoreRaw,
         item.opaScores?.[1], item.opaFeedbacks?.[1], item.opaScores?.[2], item.opaFeedbacks?.[2],
         item.opaScores?.[3], item.opaFeedbacks?.[3], item.feedbackGood, item.feedbackNeeds, item.studentFeedback,
         item.trainingType, item.instrumentType, item.stationDetails, item.skillName,
-        ...TARGET_MILESTONES.map(label => item.milestoneLevels?.[label])
+        ...TARGET_MILESTONES.map(label => item.milestoneLevels?.[label]),
+        item.trainingProgram
     ]);
     const quote = value => '"' + String(value ?? '').replace(/"/g, '""') + '"';
     const csv = [headers, ...rows].map(row => row.map(quote).join(',')).join('\r\n');

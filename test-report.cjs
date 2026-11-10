@@ -35,3 +35,25 @@ assert.equal(parsedEmpty[0].stationDetails, '');
 const escapedQuote = vm.runInContext(`analyzeCSV('執行日期,學員姓名,類型,學員回饋意見\\n"2025-12-29","測試學員","輔導紀錄","回饋：""保留引號"""')`, context);
 assert.equal(escapedQuote[0].studentFeedback, '回饋："保留引號"');
 console.log('PASS: CSV quoted empty fields and escaped quotes');
+
+vm.runInContext(`
+const trainingRecords = readPortfolioFile(
+    '執行日期,學員姓名,類型,訓練類別\\n2025-01-01,甲,單站評量,醫事放射ＵＧＹ\\n2025-01-02,乙,單站評量,醫事放射PGY',
+    'records.csv'
+);
+const trainingTitles = [
+    getReportMetadata([trainingRecords[0]]).title,
+    getReportMetadata([trainingRecords[1]]).title,
+    getReportMetadata(trainingRecords).title,
+    getReportMetadata([trainingRecords[0], samples[0]]).title,
+    getReportMetadata(samples).title
+];
+`, context);
+assert.deepEqual(Array.from(vm.runInContext('trainingTitles', context)), [
+    '醫事放射UGY成果展示報告',
+    '醫事放射師PGY成果展示報告',
+    '醫事放射UGY／PGY成果展示報告',
+    '醫事放射成果展示報告',
+    '醫事放射成果展示報告'
+]);
+console.log('PASS: report titles for UGY, PGY, mixed, and unclassified records');

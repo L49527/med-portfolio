@@ -1,10 +1,13 @@
-// HTML reader copied from export/parser.js. Keep its rules unchanged.
+// HTML reader adapted from export/parser.js.
 const legacyPortfolio = (() => {
 function analyzeHTML(raw) {
     try {
         let parser = new DOMParser();
         let doc = parser.parseFromString(raw, "text/html");
         let cleanText = doc.body.innerText.replace(/\s+/g, ' ');
+        const categoryLabel = Array.from(doc.querySelectorAll('dt'))
+            .find(label => /^訓練類別\s*[:：]?$/.test(label.textContent.trim()));
+        const category = categoryLabel?.nextElementSibling;
 
         // 相容於評量展示助手 v1.0 的里程碑指標清單
         const TARGET_MILESTONES = [
@@ -25,6 +28,7 @@ function analyzeHTML(raw) {
         let item = {
             id: Math.random().toString(36).substr(2, 9),
             type: '評量表', department: '影像醫學科', title: doc.title || "評量表", date: '1900-01-01',
+            trainingProgram: category?.tagName === 'DD' ? category.textContent.trim() : '',
             scoreRaw: '', studentName: '未知', teacherName: '未註明',
             subScores: { knowledge: '', operation: '', attitude: '' },
             stationScores: [], feedbacks: [], showSubscores: false,
@@ -764,7 +768,7 @@ function toPortfolioCSV(records) {
         "執行日期", "學員姓名", "教師/主持人", "類型", "科別", "表單標題", "總分",
         "OPA1", "OPA1回饋", "OPA2", "OPA2回饋", "OPA3", "OPA3回饋",
         "表現良好項目", "建議加強項目", "學員回饋意見", "訓練別編號", "儀器別", "各站成績",
-        ...milestoneHeaders
+        ...milestoneHeaders, "訓練類別"
     ];
 
     let rows = [hs.join(',')];
@@ -808,7 +812,8 @@ function toPortfolioCSV(records) {
             i.department, // 訓練別編號
             i.instrument, // 儀器別
             stationText,
-            ...mLevels
+            ...mLevels,
+            i.trainingProgram
         ];
 
         rows.push(rowData.map(v => `"${(v || '').toString().replace(/"/g, '""').replace(/\n/g, ' ').replace(/\r/g, '')}"`).join(','));
