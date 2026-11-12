@@ -4,97 +4,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>評量展示助手 v1.1</title>
+    <title>評量展示助手 v2.0</title>
 
     <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3063/3063176.png">
+    <link rel="apple-touch-icon" href="logo.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="醫學助手">
     <meta name="theme-color" content="#0f172a">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body class="h-screen flex flex-col text-slate-800 bg-slate-50">
 
-    <header
-        class="bg-white text-slate-800 px-6 py-4 flex flex-wrap justify-between items-center shadow-xl z-[200] flex-none border-b border-slate-200 gap-4">
-        <div class="flex items-center gap-4">
-            <img src="logo.png" alt="輔大醫院" class="h-20">
+    <header class="app-header">
+        <div class="flex items-center gap-3">
+            <img src="logo.png" alt="輔大醫院" class="h-12">
             <div>
-                <h1 class="text-lg font-black text-slate-800 leading-tight">輔仁大學附設醫院 <span
-                        class="text-teal-600">評量展示助手</span>
-                </h1>
-                <p class="text-[10px] text-slate-500 italic tracking-widest uppercase">Fu Jen Catholic University
-                    Hospital | Medical Education Assessment</p>
+                <h1 class="text-lg font-semibold text-slate-800 leading-tight">輔仁大學附設醫院 <span
+                        class="text-teal-600">評量展示助手</span> <span class="app-version">v2.0</span></h1>
+                <p class="text-[10px] text-slate-500">Fu Jen Catholic University Hospital | Medical Education Assessment</p>
             </div>
         </div>
-        <div class="flex flex-wrap gap-2 text-white">
-            <div id="normalModeBtns" class="flex gap-2">
-                <button id="cardModeBtn" onclick="switchView('card')"
-                    class="px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md hover:bg-slate-700 bg-slate-800 mode-active text-sm"><i
-                        class="fas fa-th-large"></i> <span>卡片</span></button>
-                <button id="compareModeBtn" onclick="switchView('compare')"
-                    class="px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md hover:bg-blue-700 bg-blue-600 text-sm"><i
-                        class="fas fa-right-left"></i> <span>互比</span></button>
-                <button id="chartModeBtn" onclick="switchView('chart')"
-                    class="px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md hover:bg-indigo-700 bg-indigo-600 text-sm"><i
-                        class="fas fa-award"></i> <span>成果展</span></button>
-            </div>
-            <button onclick="printAccreditationReport()"
-                class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md text-sm"><i
-                    class="fas fa-print"></i> 列印</button>
-            <button type="button" onclick="exportPortfolioCSV()"
-                class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-1.5 rounded-xl font-black transition flex items-center gap-2 shadow-md text-sm"><i
-                    class="fas fa-file-csv"></i> 匯出 CSV</button>
-            <button onclick="clearHistory()" title="全部清空"
-                class="bg-slate-800 hover:bg-red-600 px-3 py-1.5 rounded-lg transition text-xs text-white"><i
-                    class="fas fa-trash-alt"></i></button>
+        <div class="flex flex-wrap items-center gap-3">
+            <nav id="normalModeBtns" class="mode-switch" aria-label="檢視模式">
+                <button id="cardModeBtn" onclick="switchView('card')" class="mode-active"><i class="fas fa-th-large" aria-hidden="true"></i> 逐筆紀錄</button>
+                <button id="compareModeBtn" onclick="switchView('compare')"><i class="fas fa-right-left" aria-hidden="true"></i> 歷次對照表</button>
+                <button id="chartModeBtn" onclick="switchView('chart')"><i class="fas fa-award" aria-hidden="true"></i> 評鑑報告</button>
+            </nav>
+            <span id="dataSummary" class="data-summary" role="status" hidden></span>
+            <details id="importMenu" class="import-menu">
+                <summary class="primary-btn"><i class="fas fa-file-import" aria-hidden="true"></i> 匯入資料 <i class="fas fa-chevron-down text-xs" aria-hidden="true"></i></summary>
+                <div class="import-menu-panel" role="menu">
+                    <button type="button" role="menuitem" onclick="openFilePicker()"><i class="fas fa-file-arrow-up" aria-hidden="true"></i> 選擇檔案</button>
+                    <button type="button" role="menuitem" onclick="openFolderPicker()"><i class="fas fa-folder-open" aria-hidden="true"></i> 選擇資料夾</button>
+                    <details class="import-menu-eportfolio">
+                        <summary><i class="fas fa-link" aria-hidden="true"></i> 從 e-Portfolio 直接匯入</summary>
+                        <p id="eportfolioBookmarkNotice">請用 HTTPS 網頁版開啟評量展示助手，以建立書籤。</p>
+                        <a id="eportfolioBookmark" draggable="true" hidden>匯入 e-Portfolio 表單</a>
+                    </details>
+                    <hr>
+                    <button type="button" role="menuitem" onclick="startNextStudent()"><i class="fas fa-user-plus" aria-hidden="true"></i> 換下一位學員<span>清空目前資料，再選下一位的資料夾</span></button>
+                    <button type="button" role="menuitem" class="danger" onclick="clearHistory()"><i class="fas fa-trash-alt" aria-hidden="true"></i> 清空全部資料</button>
+                </div>
+            </details>
+            <button type="button" onclick="exportPortfolioCSV()" class="secondary-btn"><i class="fas fa-file-csv" aria-hidden="true"></i> 匯出 CSV</button>
         </div>
     </header>
 
     <div id="appContainer" class="flex flex-1 overflow-hidden relative">
-        <div id="sidebar" class="bg-white border-r border-slate-200 flex flex-col shadow-xl z-30 relative">
-            <button onclick="toggleSidebar()"
-                class="w-full py-8 flex flex-col items-center gap-4 hover:bg-teal-50 text-teal-600 transition-all border-b border-slate-100 flex-none">
-                <i id="sidebarIcon" class="fas fa-angles-right text-xl"></i>
-                <span id="sidebarBtnLabel" class="text-[9px] font-black uppercase vertical-text">開啟匯入區</span>
-            </button>
-            <div id="sidebarContent" class="p-6 flex-1 overflow-y-auto flex flex-col">
-                <div class="mb-4 text-teal-600 font-bold flex items-center gap-2 text-base"><i
-                        class="fas fa-file-circle-plus"></i><span>批次資料匯入</span></div>
-                <div id="dropZone"
-                    class="border-4 border-dashed border-slate-200 rounded-[2.5rem] flex-1 flex flex-col items-center justify-center p-6 transition-all hover:border-teal-500 hover:bg-teal-50 group cursor-pointer shadow-inner bg-slate-50">
-                    <i
-                        class="fas fa-cloud-arrow-up text-7xl text-slate-200 group-hover:text-teal-500 mb-6 transition-transform group-hover:scale-110"></i>
-                    <p
-                        class="text-xl font-black text-slate-500 group-hover:text-teal-600 text-center leading-tight tracking-tighter">
-                        將 HTML / HTM / CSV 檔案<br>丟入此處匯入</p>
-                    <input type="file" id="fileInput" multiple accept=".html,.htm,.csv" class="hidden">
-                </div>
-                <div class="mt-4 flex flex-col items-center gap-2">
-                    <button type="button" id="chooseImportFolder"
-                        class="bg-slate-800 hover:bg-teal-700 text-white px-4 py-2 rounded-xl font-black transition flex items-center gap-2 shadow-md text-sm">
-                        <i class="fas fa-folder-open"></i> 選擇資料夾
-                    </button>
-                    <input type="file" id="folderImportInput" webkitdirectory multiple class="hidden">
-                </div>
-                <details class="mt-4 flex-none rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                    <summary class="cursor-pointer font-bold text-teal-800">從 e-Portfolio 直接匯入</summary>
-                    <p id="eportfolioBookmarkNotice" class="mt-2 text-slate-600">請用 HTTPS 網頁版開啟評量展示助手，以建立書籤。</p>
-                    <a id="eportfolioBookmark" class="mt-2 font-bold text-teal-800 underline" draggable="true" hidden>匯入 e-Portfolio 表單</a>
-                </details>
-            </div>
-        </div>
-
         <div class="flex-1 flex flex-col bg-slate-100 overflow-hidden relative">
-            <div
-                class="bg-white px-4 md:px-10 py-4 border-b border-slate-200 flex flex-wrap items-end justify-between gap-4 shadow-sm z-10 font-black">
+            <div id="filterBar"
+                class="bg-white px-4 md:px-10 py-4 border-b border-slate-200 flex flex-wrap items-end justify-between gap-4 shadow-sm z-10 font-semibold">
                 <div class="filter-fields">
+                    <label for="studentFilter" id="studentFilterField" hidden>學員
+                        <select id="studentFilter" onchange="setStudentFilter(this.value)" class="custom-select">
+                            <option value="all">所有學員</option>
+                        </select>
+                    </label>
+                    <label for="trainingFilter">訓練別
+                        <select id="trainingFilter" onchange="setTrainingFilter(this.value)" class="custom-select">
+                            <option value="all">所有訓練別</option>
+                        </select>
+                    </label>
                     <label for="typeFilter">評量類型
                         <select id="typeFilter" onchange="setFilter(this.value)" class="custom-select">
                             <option value="all">全部類型</option>
@@ -110,19 +86,14 @@
                             <option value="單站評量">單站</option>
                         </select>
                     </label>
-                    <label for="trainingFilter">訓練別
-                        <select id="trainingFilter" onchange="setTrainingFilter(this.value)" class="custom-select">
-                            <option value="all">所有訓練別</option>
-                        </select>
-                    </label>
                     <label for="instrumentFilter">儀器別
                         <select id="instrumentFilter" onchange="setInstrumentFilter(this.value)" class="custom-select">
                             <option value="all">所有儀器別</option>
                         </select>
                     </label>
                 </div>
-                <button onclick="toggleSort()"
-                    class="bg-slate-50 hover:bg-teal-50 text-slate-600 px-5 py-2.5 rounded-2xl text-sm font-black border border-slate-200 shadow-sm transition-colors">
+                <button id="sortButton" onclick="toggleSort()"
+                    class="bg-slate-50 hover:bg-teal-50 text-slate-600 px-5 py-2.5 rounded-2xl text-sm font-semibold border border-slate-200 shadow-sm transition-colors">
                     <i class="fas fa-arrows-up-down text-teal-500" id="sortIcon"></i>
                     <span id="sortText">日期：舊到新</span>
                 </button>
@@ -135,26 +106,48 @@
             <p id="eportfolioTransferStatus" class="empty:hidden bg-teal-50 px-6 py-2 text-sm font-bold text-teal-800" role="status"></p>
 
             <div class="flex-1 p-6 overflow-y-auto" id="historyContainer">
-                <div id="emptyState"
-                    class="h-full flex flex-col items-center justify-center text-slate-300 opacity-40 text-center leading-loose">
-                    <i class="fas fa-layer-group text-9xl mb-6"></i>
-                    <p class="text-xl font-light tracking-widest uppercase italic">請由左側展開並匯入檔案</p>
+                <div id="emptyState" class="empty-start">
+                    <i class="fas fa-layer-group" aria-hidden="true"></i>
+                    <p class="empty-start-title">尚未匯入評量資料</p>
+                    <p class="empty-start-hint">選擇 e-Portfolio 匯出的 HTML 評量表或 CSV 檔，也可以直接把檔案或資料夾拖進視窗。</p>
+                    <div class="empty-start-actions">
+                        <button type="button" class="empty-start-primary" onclick="openFilePicker()"><i class="fas fa-file-arrow-up" aria-hidden="true"></i> 選擇檔案</button>
+                        <button type="button" class="empty-start-secondary" onclick="openFolderPicker()"><i class="fas fa-folder-open" aria-hidden="true"></i> 選擇資料夾</button>
+                    </div>
                 </div>
             </div>
-            <div class="hidden flex-1 p-6 overflow-auto bg-white shadow-inner" id="compareContainer"></div>
+            <div class="hidden flex-1 p-6 overflow-auto bg-slate-100" id="compareContainer"></div>
             <div class="hidden flex-1 flex flex-col overflow-hidden bg-slate-100" id="chartContainer">
-                <p id="reportScopeCount" class="report-scope-count" role="status">符合 0 筆 · 已納入報告 0 筆</p>
-                <details id="chartSelectorPanel" class="report-selection print-hide">
-                    <summary>調整個別紀錄</summary>
-                    <div class="report-selection-body">
-                        <p>只有已勾選且符合上方篩選的紀錄會納入報告。</p>
-                        <div class="flex flex-wrap gap-2">
-                            <button type="button" onclick="selectAllChartItems(true)" class="px-3 py-2 rounded-lg bg-teal-50 text-teal-800 font-bold">納入目前全部</button>
-                            <button type="button" onclick="selectAllChartItems(false)" class="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-bold">排除目前全部</button>
+                <div id="reportToolbar" class="report-toolbar print-hide">
+                    <div class="report-toolbar-row">
+                        <p id="reportScopeCount" class="report-scope-count" role="status">符合 0 筆 · 已納入報告 0 筆</p>
+                        <div class="report-toolbar-actions">
+                            <button type="button" id="presentButton" class="secondary-btn" onclick="togglePresentationMode()"><i class="fas fa-display" aria-hidden="true"></i> 展示模式</button>
+                            <button type="button" id="printReportButton" class="primary-btn" onclick="printAccreditationReport()"><i class="fas fa-print" aria-hidden="true"></i> 列印報告</button>
                         </div>
-                        <div id="chartItemSelector" class="report-selection-list"></div>
                     </div>
-                </details>
+                    <fieldset class="report-sections">
+                        <legend>報告內容</legend>
+                        <label><input type="checkbox" checked onchange="setReportSection('overview', this.checked)"> 評量總覽</label>
+                        <label><input type="checkbox" checked onchange="setReportSection('charts', this.checked)"> 圖表</label>
+                        <label><input type="checkbox" checked onchange="setReportSection('feedback', this.checked)"> 回饋與改善追蹤</label>
+                        <label><input type="checkbox" checked onchange="setReportSection('counseling', this.checked)"> 導師輔導紀錄（雙向溝通紀錄表）</label>
+                        <label><input type="checkbox" checked onchange="setReportSection('records', this.checked)"> 其他文字紀錄</label>
+                        <span class="report-sections-hint">封面一律列出；畫面所見即列印內容</span>
+                    </fieldset>
+                    <details id="chartSelectorPanel" class="report-selection">
+                        <summary>調整個別紀錄</summary>
+                        <div class="report-selection-body">
+                            <p>只有已勾選且符合上方篩選的紀錄會納入報告。</p>
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" onclick="selectAllChartItems(true)" class="px-3 py-2 rounded-lg bg-teal-50 text-teal-800 font-bold">納入目前全部</button>
+                                <button type="button" onclick="selectAllChartItems(false)" class="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 font-bold">排除目前全部</button>
+                            </div>
+                            <div id="chartItemSelector" class="report-selection-list"></div>
+                        </div>
+                    </details>
+                </div>
+                <button type="button" id="exitPresentButton" class="exit-present-btn" onclick="togglePresentationMode(false)" hidden><i class="fas fa-xmark" aria-hidden="true"></i> 結束展示（Esc）</button>
                 <!-- Chart Grid -->
                 <div class="flex-1 p-8 overflow-auto">
                     <div class="grid grid-cols-1 gap-8" id="chartGrid"></div>
@@ -163,13 +156,17 @@
         </div>
     </div>
 
+    <input type="file" id="fileInput" multiple accept=".html,.htm,.csv" hidden>
+    <input type="file" id="folderImportInput" webkitdirectory multiple hidden>
+    <div id="dropOverlay" class="drop-overlay" hidden>
+        <div><i class="fas fa-cloud-arrow-up" aria-hidden="true"></i><p>放開即可匯入 HTML／CSV 檔案或資料夾</p></div>
+    </div>
+
     <div id="progressOverlay" hidden>
         <p class="import-progress-message" role="status">正在讀取資料並匯入…</p>
     </div>
 
-    <script src="parser.js"></script>
-    <script src="legacy-html-parser.js"></script>
-    <script src="portfolio-import.js"></script>
+    <script src="import.js"></script>
     <script src="app.js"></script>
 </body>
 

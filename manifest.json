@@ -1,17 +1,17 @@
 {
-  "name": "醫學評量批次助手",
+  "name": "醫事放射師評量展示助手",
   "short_name": "評量助手",
-  "description": "自動解析醫學評量表並生成行政互比總表",
+  "description": "匯入 e-Portfolio 評量資料，產生歷次對照表與教學醫院評鑑報告",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#f8fafc",
-  "theme_color": "#e11d48",
+  "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3063/3063176.png",
+      "src": "logo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

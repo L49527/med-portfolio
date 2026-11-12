@@ -1,19 +1,52 @@
 # 醫學教育評量展示助手 (Medical Education Assessment Dashboard)
 
+目前版本：**v2.0**（2026-11-12）
+
 ## 匯入與匯出
 
-展開左側匯入區，選取或拖放 e-Portfolio HTML 評量表、筆試查詢 CSV 或原有評量 CSV，也可選取資料夾批次匯入。匯入後可使用評量類型、訓練別及儀器別篩選。右上角的「匯出 CSV」會下載目前已匯入的全部紀錄。
+點右上角「匯入資料」選擇 e-Portfolio HTML 評量表、筆試查詢 CSV 或原有評量 CSV，也可選擇資料夾批次匯入；或直接把檔案、資料夾拖進視窗。要做下一位學員的報告時，選「換下一位學員」：選好資料夾後才會清空目前資料。匯入後可使用評量類型、訓練別及儀器別篩選。右上角的「匯出 CSV」會下載目前已匯入的全部紀錄。
 
 ### 從 e-Portfolio 直接匯入
 
-1. 開啟評量展示助手的 HTTPS 網頁版，展開左側「從 e-Portfolio 直接匯入」，把「匯入 e-Portfolio 表單」拖到瀏覽器書籤列。
+1. 開啟評量展示助手的 HTTPS 網頁版，點「匯入資料」→「從 e-Portfolio 直接匯入」，把「匯入 e-Portfolio 表單」拖到瀏覽器書籤列。
 2. 在同一個瀏覽器登入 e-Portfolio，開啟「表單明細」，點剛加入的書籤。瀏覽器會另開評量展示助手並匯入這批表單。
 3. 在新分頁確認新增、重複及失敗筆數。更換瀏覽器或清除網站資料後，請重新加入書籤。
 
 ### 2026-11-10：整合 e-Portfolio 匯入
 - HTML 評量表及筆試查詢 CSV 沿用原匯出助手的讀取規則，原有評量 CSV 繼續使用既有解析器。
 - 筆試缺漏分數保留空白。匯入成功提示約 4 秒後收起，失敗時保留檔名直到手動關閉。
-- 同組僅一筆有效分數時，成果展用單一直立長條顯示分數和日期。學前／學後圖表沿用既有呈現。
+- 同組僅一筆有效分數時，評鑑報告用單一直立長條顯示分數和日期。學前／學後圖表沿用既有呈現。
+
+### 2026-11-12：v2.0 評鑑報告可讀性與介面整理
+- 程式結構：讀取資料的 parser.js、legacy-html-parser.js、portfolio-import.js 合併為 `import.js`，畫面為 `app.js`。HTML 表單直接轉成紀錄，不再先轉成 CSV。
+- 表單上所有文字欄位都會保留並顯示（例如導師意見、訪談記錄、導師回應、臨床指導教師評估與回饋、主要診斷/問題）；匯出 CSV 新增「其他文字欄位」一欄，匯入時會還原。
+- 逐筆紀錄改為寬螢幕兩欄的卡片，分數在右上角，回饋分區顯示，超過 4 行可展開。
+- 歷次對照表重新設計：每個項目（類型＋儀器／部位）一張表，欄位為第 1、2…次（含日期與教師），列出分數與前一次的差異、評量內容、表現良好、建議加強、學員回饋；上方可跳到各評量類型；只評量過一次的項目不列入。
+- 模式改名為「逐筆紀錄／歷次對照表／評鑑報告」。評鑑報告依序為封面、評量總覽、圖表、回饋與改善追蹤、文字紀錄，畫面與列印內容一致。
+- 圖表保留「第 N 次」並加上日期，每根長條或每個點標示分數；圖下方不另加文字，各項第 1 次、最近一次與變化集中在「評量總覽」。
+- 雷達圖保留歷次結果：第 1 次為灰色虛線，最近一次為粗線填色，並另附歷次趨勢折線圖。
+- 報告配色改為適合醫院文件的沉穩色系：依次數比較的圖用青綠色由淺到深（越深越新，最近一次加深框線），黑白影印也分得出先後；依儀器比較的圖，每個儀器在整份報告中固定一個顏色。
+- EPA 改為每個儀器一張「信賴等級歷次趨勢」，最後一張「各儀器最近一次信賴等級」長條圖；拿掉只有三個軸的雷達圖。學習滿意度合併成一張圖。
+- 一份報告只放一位學員：新增「學員」篩選；選取多位學員時不允許列印。
+- 頂端改成分段式模式切換，目前模式一眼可辨；「列印」移到評鑑報告工具列並改名「列印報告」，頂端只留「匯出 CSV」。
+- 篩選列以「學員」為第一欄，只有一位學員時自動選取；評鑑報告固定依日期排列，因此該模式不顯示排序按鈕。
+- 評鑑報告工具列可勾選「報告內容」：評量總覽、圖表、回饋與改善追蹤、導師輔導紀錄（雙向溝通紀錄表）、其他文字紀錄。畫面與列印一致，封面一律列出。
+- 「展示模式」只顯示報告本身（含封面），供現場給評鑑委員看；按 Esc 或「結束展示」恢復。
+- 移除左側匯入區：匯入、e-Portfolio 書籤、換下一位學員、清空資料都收在頂端「匯入資料」選單；整個視窗都能拖放匯入；頂端顯示目前資料（如「王小明 · 165 筆」）。
+- 列印為 A4 橫向、12mm 邊界、頁尾頁碼，圖表字級 16px。
+- 修正：缺分數不再當成 0 分；DOPS「其他項目」會畫進圖表；同儀器多筆學前／學後取最新一次。
+- 空白畫面提供「選擇檔案／選擇資料夾」按鈕；清空全部資料移到側欄底部；卡片刪除鈕常駐顯示。
+- Chart.js 固定為 4.4.1；manifest 與主畫面圖示改用本機 logo.png（512px）。
+- 匯出 CSV 時，以 = + - @ 開頭的文字前面加上 '，避免 Excel 當成公式執行。
+- 以真實 PGY／UGY 資料檢核後修正：
+  - HTML 評量表的「教師回饋意見-建議加強項目」原本被歸為一般教師回饋，「建議加強」因此一律空白；現在正確讀入，回饋追蹤頁才有內容。
+  - Milestone 依儀器（輪訓站）分開畫，不再把不同站的結果混成同一條線。
+  - 實習總評量表依表單名稱分組，不同表單不會被當成第 1、2 次比較。
+  - 總覽與回饋追蹤頁的 DOPS 項目加上儀器（例如「CT 胸腹部」「MRI 胸腹部」）。
+  - 只有一次分數的項目合併成一張橫向長條圖，不再一項佔一頁。
+  - 線條超過 3 條的成長曲線不在點上標數字，分數看下一張「細項成績對照」；每組超過 3 根的長條只標分數、不標日期。
+  - 「學員」篩選只有在匯入資料含兩位以上學員時才出現；只有一位時自動選取並隱藏。
+  - 原始表單中過長的小數（如 80.83333129882812）顯示到小數第一位。
 
 ## 本機驗證
 
@@ -28,44 +61,4 @@
 - 新增總評量、輔導與單站篩選按鈕；長篇紀錄可跨頁列印。
 - 修正 CSV 空引號欄位被誤讀成引號字元的問題，保留正常逸出引號內容。
 
-## 修正記錄 (Revision History)
-
-### 2026-04-22: 整合「筆試成績」功能 (Integration of Written Test Scores)
-- **新增筆試成績支援**：系統可解析 CSV 中的「筆試成績」類型。為保持介面簡潔，筆試卡片僅顯示基本資訊與分數，不顯示回饋欄位。
-  **Added Written Test Score Support**: The system parses "Written Test Score" from CSV. To keep the UI clean, test cards only display basic info and scores, excluding feedback fields.
-- **新增分析圖表**：在「成果展」模式中，新增「筆試成績分析」直方圖，依類別（如 CT, MRI, 基礎課程）呈現。
-  **Added Analysis Chart**: In "Exhibition" mode, a "Written Test Score Analysis" bar chart has been added, presented by category (e.g., CT, MRI, Basic Course).
-- **介面優化**：為筆試成績卡片設定了專屬的靛藍色 (Indigo) 主題與評分顯示邏輯。
-  **UI Optimization**: Set a dedicated Indigo theme and score display logic for written test score cards.
-
-### 2026-04-22: 優化列印模式時間顯示 (Optimization of Print Mode Time Display)
-- **更新受訓時間顯示**：將報告封面原本的「列印日期」與「列印時間」移除，改為根據匯入資料自動計算的「受訓時間」。日期範圍會自動擴展至完整月份（最早月份 1 日至最晚月份最後一日），以符合一般受訓週期。
-  **Updated Training Period Display**: Replaced "Print Date" and "Print Time" on the report cover with an automatically calculated "Training Period". The date range now automatically expands to full months (from the 1st of the earliest month to the last day of the latest month) to align with standard training cycles.
-
-### 2026-04-22: 修改報告標題 (Update Report Title)
-- **更新報告名稱**：將列印模式封面標題由「醫學教育成果展示報告」修改為「醫事放射師PGY成果展示報告」，以更精確地反映放射師 PGY 受訓性質。
-  **Updated Report Title**: Changed the report cover title from "Medical Education Assessment Report" to "Medical Radiologist PGY Assessment Report" to accurately reflect the nature of radiologist PGY training.
-
-### 2026-04-22: 優化筆試成績圖表呈現 (Optimization of Written Test Score Chart)
-- **重整圖表結構**：將「筆試成績：學前 vs 學後」圖表的 X 軸調整為以「儀器」分組，並將「學前」與「學後」設為不同顏色的資料集，使對比更清晰。
-  **Reorganized Chart Structure**: Adjusted the X-axis of the "Written Test Score: Pre vs Post" chart to group by "Instrument", and set "Pre" and "Post" as datasets with different colors for clearer comparison.
-
-### 2026-04-22: DOPS 部位互比與筆試邏輯套用 (DOPS Part Comparison & Application of Written Test Logic)
-- **優化解析邏輯**：更新部位提取規則，優先從表單標題中識別「胸腹部」、「頭頸部」等細項部位，不再僅以大項儀器名稱（如 CT）進行分組。
-  **Optimized Parsing Logic**: Updated part extraction rules to prioritize identifying sub-items like "Chest/Abdomen" and "Head/Neck" from form titles, rather than grouping solely by broad instrument names (e.g., CT).
-- **新增部位對照長條圖**：為 DOPS、Mini-CEX 及 CbD 新增「部位細項成績分析」長條圖，套用與筆試成績相同的對照邏輯，讓不同細項間的表現一目了然。
-  **Added Part Comparison Bar Chart**: Introduced "Part Sub-item Score Analysis" bar charts for DOPS, Mini-CEX, and CbD, applying the same comparison logic as written test scores to visualize performance across different sub-items clearly.
-- **同步更新折線圖**：受惠於解析邏輯優化，DOPS 成長曲線折線圖現在會自動根據部位分線顯示，呈現更精確的部位互比趨勢。
-  **Synchronized Line Charts**: Benefiting from optimized parsing logic, DOPS growth curve line charts now automatically display separate lines based on parts, showing more precise part comparison trends.
-
----
-
-## 功能概述 (Features)
-- 支援批次匯入 ePortfolio 匯出的 CSV 檔案。
-  Supports batch import of CSV files exported from ePortfolio.
-- 自動識別多種評量類型：DOPS, Mini-CEX, CbD, EPA, Milestone, 筆試成績。
-  Automatically identifies various assessment types: DOPS, Mini-CEX, CbD, EPA, Milestone, Written Test Scores.
-- 提供卡片檢視、成長互比、成果展圖表三種模式。
-  Provides three modes: Card View, Growth Comparison, and Exhibition Charts.
-- 支援列印功能，產出供教學成果整理與評鑑準備使用的報告。
-  Supports printing functionality to produce reports for teaching reviews and accreditation preparation.
+較早的修正記錄見 [CHANGELOG.md](CHANGELOG.md)。
