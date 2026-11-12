@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const scriptFiles = ['parser.js', 'legacy-html-parser.js', 'portfolio-import.js', 'app.js'];
+const scriptFiles = ['import.js', 'app.js'];
 
 function makeElement() {
     const classes = new Set();
