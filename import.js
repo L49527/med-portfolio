@@ -1,5 +1,235 @@
-// HTML reader adapted from export/parser.js.
-const legacyPortfolio = (() => {
+/* import.js — reads e-Portfolio HTML forms and CSV files into records, and exports CSV. */
+
+/* Shared constants */
+const TARGET_MILESTONES = ["一、醫學影像及放射科學知識 1", "一、醫學影像及放射科學知識 2", "二、醫病關係及團隊溝通能力 1", "二、醫病關係及團隊溝通能力 2", "三、病人照護 1", "三、病人照護 2", "三、病人照護 3", "三、病人照護 4", "三、病人照護 5", "四、提升本職技能 1", "五、專業素養 1", "五、專業素養 2"];
+const CORE_COMPETENCIES = ["醫學影像知識", "團隊溝通能力", "病人照護核心", "本職技能提升", "專業素養表現"];
+const CORE_MAP = { "醫學影像知識": [0, 1], "團隊溝通能力": [2, 3], "病人照護核心": [4, 5, 6, 7, 8], "本職技能提升": [9], "專業素養表現": [10, 11] };
+const OPA_VALUE_MAP = { 'N/A': 0, '1': 1, '2A': 2, '2B': 3, '3A': 4, '3B': 5, '3C': 6, '4': 7, '5': 8 };
+const OPA_LABEL_MAP = { 0: 'N/A', 1: '1', 2: '2a', 3: '2b', 4: '3a', 5: '3b', 6: '3c', 7: '4', 8: '5' };
+
+/* Shared helpers */
+function getSmartGroupName(item) {
+    const title = item.title;
+
+    // 新增：特別針對 DOPS-XXXX-影像醫學科 格式提取 XXXX (細項部位)
+    const dopsMatch = title.match(/^DOPS-(.*?)-/i);
+    if (dopsMatch && dopsMatch[1]) {
+        let part = dopsMatch[1].replace(/學前|測驗|學中|學後|評量|訓練/g, '').trim();
+        if (part) return part;
+    }
+
+    // 移除學前/學中/學後，只保留真實部位相關的詞彙
+    if (title.includes("放射醫學影像及儀器品保")) return "影像學";
+    const keywords = ["頭頸部", "胸腹部", "胸部", "腹部", "CTA", "Dynamic", "四肢部", "脊椎部", "Pancreas", "Liver", "乳房攝影", "Mammo", "頸椎", "腰椎", "骨盆", "KUB", "Chest", "Abdomen", "Brain", "Spine", "影像及儀器品保", "影像學"];
+    for (let key of keywords) { if (title.includes(key)) return key; }
+
+    // 若無具體部位關鍵字，優先使用已識別的儀器類別
+    if (item.instrumentType && !["未分類", "放射治療", "無", ""].includes(item.instrumentType)) {
+        return item.instrumentType;
+    }
+
+    // 如果找不到指定的 keyword，那就嘗試從標題濾掉表單類型名稱後，取剩餘有意義的部位
+    // 同時過濾掉「學前/學中/學後/訓練」這類干擾字
+    let cleanTitle = title.replace(/^(DOPS|Mini-CEX|CEX|CbD|EPA|Milestone|EPA\d)[-\s:_/]+/i, '')
+        .replace(/學前|測驗|學中|學後|評量|訓練/g, '')
+        .trim();
+
+    return cleanTitle.split(/[-_\s/]/)[0] || "其他項目";
+}
+
+function escapeAssessmentText(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+function normalizeTrainingProgram(value) {
+    const label = String(value ?? '').normalize('NFKC').trim().toUpperCase();
+    return label.match(/^(?:醫事放射師?\s*)?(UGY|PGY)$/)?.[1] || '';
+}
+
+// Other form text boxes travel through CSV as "【標題】內容 ｜ 【標題】內容".
+const OTHER_FIELDS_HEADER = '其他文字欄位';
+const FORM_FIELD_SEPARATOR = ' ｜ ';
+
+function formatFormFields(fields) {
+    return (fields || []).map(field => `【${field.label}】${field.content}`).join(FORM_FIELD_SEPARATOR);
+}
+
+function parseFormFields(text) {
+    const fields = [];
+    const pattern = /【([^】]*)】([\s\S]*?)(?= ｜ 【|$)/g;
+    for (const match of String(text || '').matchAll(pattern)) {
+        if (match[2].trim()) fields.push({ label: match[1], content: match[2].trim() });
+    }
+    return fields;
+}
+
+// Builds one record from a header row and a data row (the e-Portfolio CSV layout).
+// HTML forms use the same function through toRecord(), so both paths give identical fields.
+function recordFromRow(headers, r) {
+    const getValue = (colName) => {
+        // lastIndexOf matches the earlier column map, where a repeated header kept its last position.
+        const idx = headers.lastIndexOf(colName);
+        return (idx >= 0 && r[idx]) ? r[idx].replace(/\r/g, '').trim() : '';
+    };
+
+    // Detect type from title/filename
+    const title = getValue("表單標題") || getValue("來源檔案") || "";
+    let type = (getValue("類型") || 'Unknown').trim();
+
+    // If type is still Unknown or generic, try to detect from title
+    if (!type || type === 'Unknown') {
+        const upTitle = title.toUpperCase();
+        if (upTitle.includes('DOPS')) type = 'DOPS';
+        else if (upTitle.includes('CBD') || upTitle.includes('案例討論')) type = 'CbD';
+        else if (upTitle.includes('CEX') || upTitle.includes('MINI-CEX')) type = 'Mini-CEX';
+        else if (upTitle.includes('EPA')) type = 'EPA';
+        else if (upTitle.includes('MILESTONE') || upTitle.includes('里程碑')) type = 'Milestone';
+    }
+
+    // 為了修復 EPA 等報表有時候匯出的欄位沒抓到對的儀器，我們再次統一針對 Instrument 做分析
+    // 優先使用「儀器別」，若無，再看「訓練別編號」，若都無，如果是 EPA，就用 getSmartGroupName 猜一個。
+    let instRaw = getValue("儀器別") || getValue("訓練別編號") || getValue("科別") || "";
+
+    // --- 特別修復 ---
+    // E-Portfolio 的導出工具預設會把 EPA 的儀器別全部填上「放射治療」！必須在這裡將其洗掉
+    // 擴大修復範圍：如果儀器別是放射治療、無、或未分類，都進來重新判斷
+    if (type === 'EPA' && (instRaw.includes('放射治療') || !instRaw || instRaw === "無" || instRaw === "未分類")) {
+        const t = title;
+        if (t.includes('電腦斷層') || t.includes('EPA1')) instRaw = 'CT';
+        else if (t.includes('一般診斷') || t.includes('EPA2')) instRaw = '一般攝影';
+        else if (t.includes('乳房攝影') || t.includes('Mammo') || t.includes('EPA3')) instRaw = 'Mammo';
+        else if (t.includes('磁振造影') || t.includes('EPA4')) instRaw = 'MRI';
+        else if (t.includes('血管攝影') || t.includes('EPA5')) instRaw = 'Angio';
+        else if (t.includes('透視') || t.includes('特殊')) instRaw = 'Special';
+        else if (t.includes('超音波')) instRaw = 'Sono';
+        else if (t.includes('核子醫學')) instRaw = 'NM';
+        else instRaw = '';
+    }
+
+    // 對於 EPA 或 DOPS，如果還是空的，試著從標題猜
+    if ((!instRaw || instRaw === "無" || instRaw === "未分類") && (type === 'EPA' || type === 'DOPS')) {
+        instRaw = getSmartGroupName({ title: title }); // 借用這個函數切出最前面那一塊
+    }
+
+
+    let item = {
+        id: Math.random().toString(36).substr(2, 9),
+        date: getValue("執行日期") || '1900-01-01',
+        studentName: getValue("學員姓名") || '未知學員',
+        type: type,
+        title: title || "未定義表單",
+        scoreRaw: getValue("總分") || '',
+        skillName: getValue("操作項目") || getValue("科別") || '',
+        opaScores: { 1: '', 2: '', 3: '' },
+        opaFeedbacks: { 1: '', 2: '', 3: '' },
+        feedbackGood: getValue("表現良好項目") || '',
+        feedbackNeeds: getValue("建議加強項目") || '',
+        studentFeedback: getValue("學員回饋意見") || getValue("評語/心得") || '',
+        teacherName: getValue("教師/主持人") || '未註明',
+        trainingType: getValue("訓練別編號") || getValue("科別") || '未分類',
+        trainingProgram: normalizeTrainingProgram(getValue("訓練類別")),
+        instrumentType: (instRaw || '').includes('總評估') ? '總評估' : (instRaw || ''),
+        stationDetails: getValue("各站成績") || '', // 新增：支援 v5.1 各站成績 (基礎課程細項)
+        milestoneLevels: {},
+        formFields: parseFormFields(getValue(OTHER_FIELDS_HEADER))
+    };
+
+    // Try to parse OPA scores from dynamic columns (OPA1, OPA2, OPA3)
+    [1, 2, 3].forEach(n => {
+        const opaScore = getValue(`OPA${n}`) || getValue(`OPA ${n}`);
+        const opaFeedback = getValue(`OPA${n}回饋`) || getValue(`OPA ${n}回饋`);
+        if (opaScore) item.opaScores[n] = opaScore;
+        if (opaFeedback) item.opaFeedbacks[n] = opaFeedback;
+    });
+
+    // Try to parse Milestone levels from dynamic columns
+    // First try using TARGET_MILESTONES
+    TARGET_MILESTONES.forEach(m => {
+        const level = getValue(m);
+        if (level) item.milestoneLevels[m] = level;
+    });
+
+    // If type is Milestone and no levels found, try dynamic column detection
+    // If type is Milestone and no levels found, try dynamic column detection by order
+    if (type === 'Milestone' && Object.keys(item.milestoneLevels).length === 0) {
+        // Find all potential level columns
+        const potentialLevelCols = [];
+        headers.forEach((h, idx) => {
+            // Specific logic for E-Portfolio CSV: Columns after _dataType or at the end
+            // The CSV from the tool seems to have long description headers
+            if (r[idx]) {
+                const val = r[idx].replace(/\r/g, '').trim();
+                // Check if value looks like a Level
+                if (val.includes('Level') || /^L?\d$/.test(val)) {
+                    potentialLevelCols.push(val);
+                }
+            }
+        });
+
+        // If we found exactly 12 columns (matching TARGET_MILESTONES length), map them by order
+        if (potentialLevelCols.length === TARGET_MILESTONES.length) {
+            potentialLevelCols.forEach((val, idx) => {
+                // Extract numeric value only (e.g. "Level 4" -> "4", "L4" -> "4")
+                item.milestoneLevels[TARGET_MILESTONES[idx]] = val.replace(/Level\s*|L/gi, '').trim();
+            });
+        } else if (potentialLevelCols.length > 0) {
+            potentialLevelCols.forEach((val, idx) => {
+                if (idx < TARGET_MILESTONES.length) {
+                    item.milestoneLevels[TARGET_MILESTONES[idx]] = val.replace(/Level\s*|L/gi, '').trim();
+                }
+            });
+        }
+    }
+    return item;
+}
+
+/* CSV reader (e-Portfolio CSV and this tool's own export) */
+function analyzeCSV(content) {
+    try {
+        // Remove BOM if present
+        if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1);
+
+        const rows = []; let row = []; let curr = ""; let inQuotes = false;
+        for (let i = 0; i < content.length; i++) {
+            let char = content[i]; if (inQuotes && char === '"' && content[i + 1] === '"') { curr += '"'; i++; } else if (char === '"') inQuotes = !inQuotes; else if (char === ',' && !inQuotes) { row.push(curr); curr = ""; } else if (char === '\n' && !inQuotes) { row.push(curr); rows.push(row); row = []; curr = ""; } else curr += char;
+        }
+        if (curr || row.length) { row.push(curr); rows.push(row); }
+
+        if (rows.length < 2) return null;
+
+        const headers = rows[0].map(h => h.replace(/\r/g, '').trim());
+        const res = [];
+
+        // Detect CSV format by checking header row
+        const isEPortfolioFormat = headers.includes("來源檔案") || headers.includes("執行日期") || headers.includes("教師/主持人");
+        const isOriginalFormat = headers.includes("評量日期") && headers.includes("類型");
+
+        if (isEPortfolioFormat) {
+            // E-Portfolio Web Tool format
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i].length < 3) continue;
+                res.push(recordFromRow(headers, rows[i]));
+            }
+        } else {
+            // Original format (exported by this tool)
+            const trainingProgramColumn = headers.indexOf('訓練類別');
+            const dataRows = rows.filter(r => r.length > 5 && r[0] !== "評量日期");
+            dataRows.forEach(r => {
+                let item = { id: Math.random().toString(36).substr(2, 9), date: r[0], studentName: r[1], type: r[2], title: r[3], scoreRaw: r[4], skillName: r[5], opaScores: { 1: r[6], 2: r[8], 3: r[10] }, opaFeedbacks: { 1: r[7], 2: r[9], 3: r[11] }, feedbackGood: r[12], feedbackNeeds: r[13], studentFeedback: r[14], teacherName: r[15] || '未註明', trainingType: r[16] || '未分類', instrumentType: r[17] || '', milestoneLevels: {}, formFields: [] };
+                item.trainingProgram = normalizeTrainingProgram(r[trainingProgramColumn]);
+                TARGET_MILESTONES.forEach((m, idx) => { if (r[18 + idx]) item.milestoneLevels[m] = r[18 + idx]; });
+                res.push(item);
+            });
+        }
+
+        return res;
+    } catch (e) { console.error("CSV parse error:", e); return null; }
+}
+
+/* e-Portfolio HTML form reader */
+const htmlFormReader = (() => {
 function analyzeHTML(raw) {
     try {
         let parser = new DOMParser();
@@ -629,13 +859,17 @@ function analyzeHTML(raw) {
         }
 
         // --- 5. 回饋內容完整提取 (改用 DOM 遍歷以確保抓取所有符合條件的欄位) ---
+        // Specific labels come first: "教師回饋意見-建議加強項目" must match 建議加強項目, not 教師回饋意見.
         const feedbackKeywords = [
-            "臨床指導教師評估與回饋", "表現良好項目", "評估者回饋", "教師回饋意見", "教師回饋",
-            "導師回應", "教學負責人回應", "負責人回應", "建議加強項目", "改善項目", "待加強",
+            "表現良好項目", "建議加強項目", "改善項目", "待加強",
+            "臨床指導教師評估與回饋", "評估者回饋", "教師回饋意見", "教師回饋",
+            "導師回應", "教學負責人回應", "負責人回應",
             "對於如何增進實習效果的建議", "實習心得", "學員職前期許", "學生對實習醫院之建議",
             "學生對學校之建議", "受評者回饋意見", "學員回饋", "學生其它建議", "訪談記錄", "導師意見"
         ];
 
+        // Every labelled text box, in form order; toRecord() keeps the ones not shown elsewhere.
+        item.formFields = [];
         let allFormGroups = doc.querySelectorAll('.form-group');
         allFormGroups.forEach(group => {
             let labelElement = group.querySelector('label');
@@ -645,6 +879,8 @@ function analyzeHTML(raw) {
                 let content = textareaElement.value.trim() || textareaElement.innerText.trim();
 
                 if (content && !["無", "沒有", "無建議", "無。", "無建議。"].includes(content)) {
+                    const fieldLabel = labelText.replace(/\s+/g, ' ').replace(/\s*[:：]\s*$/, '').trim();
+                    if (fieldLabel) item.formFields.push({ label: fieldLabel, content });
                     // 偵測是否為感興趣的欄位
                     let matchedKeyword = feedbackKeywords.find(kw => labelText.includes(kw));
                     // 或者是特殊回饋單 (isInternGeneralFeedback) 的序號標題
@@ -746,80 +982,283 @@ function parseCSV(text) {
     return results;
 }
 
-// Reuse the original export-to-display CSV field mapping.
-function toPortfolioCSV(records) {
-    // 欄位名稱與 評量展示助手 v1.0 完全相容
-    const milestoneHeaders = [
-        "一、醫學影像及放射科學知識 1",
-        "一、醫學影像及放射科學知識 2",
-        "二、醫病關係及團隊溝通能力 1",
-        "二、醫病關係及團隊溝通能力 2",
-        "三、病人照護 1",
-        "三、病人照護 2",
-        "三、病人照護 3",
-        "三、病人照護 4",
-        "三、病人照護 5",
-        "四、提升本職技能 1",
-        "五、專業素養 1",
-        "五、專業素養 2"
-    ];
+// Same columns the original CSV conversion produced, so records match the earlier import exactly.
+const RECORD_HEADERS = [
+    "執行日期", "學員姓名", "教師/主持人", "類型", "科別", "表單標題", "總分",
+    "OPA1", "OPA1回饋", "OPA2", "OPA2回饋", "OPA3", "OPA3回饋",
+    "表現良好項目", "建議加強項目", "學員回饋意見", "訓練別編號", "儀器別", "各站成績",
+    ...TARGET_MILESTONES, "訓練類別"
+];
 
-    let hs = [
-        "執行日期", "學員姓名", "教師/主持人", "類型", "科別", "表單標題", "總分",
-        "OPA1", "OPA1回饋", "OPA2", "OPA2回饋", "OPA3", "OPA3回饋",
-        "表現良好項目", "建議加強項目", "學員回饋意見", "訓練別編號", "儀器別", "各站成績",
-        ...milestoneHeaders, "訓練類別"
-    ];
-
-    let rows = [hs.join(',')];
-
-    records.forEach(i => {
-        let stationText = i.stationScores.map(s => s.label + ':' + s.value).join('; ');
-
-        // 分離回饋內容
-        let feedbackGood = '';
-        let feedbackNeeds = '';
-        let studentFeedback = '';
-        i.feedbacks.forEach(f => {
-            if (f.label.includes('良好') || f.label.includes('表現')) feedbackGood = f.content;
-            else if (f.label.includes('加強') || f.label.includes('改善')) feedbackNeeds = f.content;
-            else if (f.label.includes('學員') || f.label.includes('心得')) studentFeedback = f.content;
-        });
-
-        // 總分輸出
-        let scoreOutput = (i.type === 'EPA' || i.type === 'Milestone' || i.title.toUpperCase().includes('EPA') || i.title.toUpperCase().includes('里程碑')) ? '' : i.scoreRaw;
-
-        // 里程碑等級欄位資料
-        let mLevels = milestoneHeaders.map(h => i.milestoneLevels ? (i.milestoneLevels[h] || '') : '');
-
-        let rowData = [
-            i.date,
-            i.studentName,
-            i.teacherName,
-            i.type,
-            i.department,
-            i.title,
-            scoreOutput,
-            i.opaScores ? i.opaScores.opa1 : '',
-            i.opaFeedbacks ? i.opaFeedbacks.opa1 : '',
-            i.opaScores ? i.opaScores.opa2 : '',
-            i.opaFeedbacks ? i.opaFeedbacks.opa2 : '',
-            i.opaScores ? i.opaScores.opa3 : '',
-            i.opaFeedbacks ? i.opaFeedbacks.opa3 : '',
-            feedbackGood,
-            feedbackNeeds,
-            studentFeedback,
-            i.department, // 訓練別編號
-            i.instrument, // 儀器別
-            stationText,
-            ...mLevels,
-            i.trainingProgram
-        ];
-
-        rows.push(rowData.map(v => `"${(v || '').toString().replace(/"/g, '""').replace(/\n/g, ' ').replace(/\r/g, '')}"`).join(','));
+function toRecord(form) {
+    let feedbackGood = '';
+    let feedbackNeeds = '';
+    let studentFeedback = '';
+    form.feedbacks.forEach(f => {
+        if (f.label.includes('良好') || f.label.includes('表現')) feedbackGood = f.content;
+        else if (f.label.includes('加強') || f.label.includes('改善')) feedbackNeeds = f.content;
+        else if (f.label.includes('學員') || f.label.includes('心得')) studentFeedback = f.content;
     });
-    return rows.join('\n');
+    const noScore = form.type === 'EPA' || form.type === 'Milestone' || form.title.toUpperCase().includes('EPA') || form.title.toUpperCase().includes('里程碑');
+    const row = [
+        form.date, form.studentName, form.teacherName, form.type, form.department, form.title, noScore ? '' : form.scoreRaw,
+        form.opaScores?.opa1, form.opaFeedbacks?.opa1, form.opaScores?.opa2, form.opaFeedbacks?.opa2,
+        form.opaScores?.opa3, form.opaFeedbacks?.opa3,
+        feedbackGood, feedbackNeeds, studentFeedback,
+        form.department, form.instrument, form.stationScores.map(s => s.label + ':' + s.value).join('; '),
+        ...TARGET_MILESTONES.map(label => form.milestoneLevels?.[label] || ''),
+        form.trainingProgram
+    ].map(value => String(value ?? '').replace(/\r/g, ''));
+    const record = recordFromRow(RECORD_HEADERS, row);
+    // Text boxes already shown as 表現良好／建議加強／學員回饋 or OPA feedback are not repeated.
+    const shown = new Set([record.feedbackGood, record.feedbackNeeds, record.studentFeedback,
+        ...Object.values(record.opaFeedbacks)].map(text => String(text || '').trim()).filter(Boolean));
+    record.formFields = (form.formFields || []).filter(field => !shown.has(field.content.trim()));
+    return record;
 }
 
-return { analyzeHTML, parseCSV, toPortfolioCSV };
+return { analyzeHTML, parseCSV, toRecord };
 })();
+
+/* File import, drag and drop, e-Portfolio bookmark and CSV export */
+const PORTFOLIO_FILE_EXTENSION = /\.(?:html?|csv)$/i;
+
+// This function is serialized into the user's bookmark and runs on the e-Portfolio page.
+async function sendEPortfolioForms(appUrl, pairingKey) {
+    const forms = [];
+    for (const link of document.querySelectorAll('.modal-body a')) {
+        if (!link.getClientRects().length) continue;
+        const handler = [link.getAttribute('href'), link.getAttribute('onclick')].join(' ');
+        const args = handler.match(/\bshowFillForm\s*\(([^)]*)\)/)?.[1]
+            .split(',').map(value => value.trim().replace(/^(['"])(.*)\1$/, '$2'));
+        if (!args || args.length < 4 || !args[0]) continue;
+        const url = new URL('../form/prompt/fillForm', document.baseURI);
+        url.search = new URLSearchParams({
+            isWindowOpen: 'true', formKey: args[0], fromPage: 'classForm',
+            refTable: args[2], refId: args[3]
+        });
+        const name = link.innerText.trim().replace(/[\\/:*?"<>|]/g, '_') || '表單-' + (forms.length + 1);
+        forms.push({ url, name: name + '.html' });
+    }
+
+    const destination = new URL(appUrl);
+    if (!forms.length || destination.origin === location.origin || !/^https?:$/.test(location.protocol)) {
+        alert('請先在 e-Portfolio 開啟「表單明細」，再點此書籤。');
+        return;
+    }
+    destination.hash = new URLSearchParams({ epImport: pairingKey, source: location.origin });
+    const receiver = window.open(destination.href, '_blank');
+    if (!receiver) {
+        alert('瀏覽器阻擋了評量展示助手。請允許 e-Portfolio 開啟彈出式視窗，再點一次書籤。');
+        return;
+    }
+
+    const port = await new Promise(resolve => {
+        const timer = setTimeout(() => {
+            window.removeEventListener('message', onReady);
+            resolve(null);
+        }, 25_000);
+        function onReady(event) {
+            if (event.source !== receiver || event.origin !== destination.origin ||
+                event.data?.type !== 'med-portfolio-ready' || event.data.key !== pairingKey || !event.ports[0]) return;
+            clearTimeout(timer);
+            window.removeEventListener('message', onReady);
+            resolve(event.ports[0]);
+        }
+        window.addEventListener('message', onReady);
+    });
+    if (!port) {
+        alert('評量展示助手尚未連線。請確認網頁可正常開啟，並從該頁重新加入書籤。');
+        return;
+    }
+
+    const files = [];
+    const failedFiles = [];
+    for (const { url, name } of forms) {
+        if (receiver.closed) return;
+        port.postMessage({ processed: files.length + failedFiles.length, total: forms.length });
+        try {
+            const response = await fetch(url, { mode: 'same-origin', signal: AbortSignal.timeout(20_000) });
+            if (!response.ok) throw new Error('讀取表單失敗');
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const isAssessment = Array.from(doc.querySelectorAll('dt')).some(label =>
+                /^訓練(?:類別|計畫)\s*[:：]?$/.test(label.textContent.trim()) &&
+                label.nextElementSibling?.tagName === 'DD');
+            if (!isAssessment) throw new Error('回傳頁面缺少評量表欄位');
+            files.push(new File([html], name, { type: 'text/html' }));
+        } catch {
+            failedFiles.push(name);
+        }
+        if (files.length + failedFiles.length < forms.length) await new Promise(resolve => setTimeout(resolve, 800));
+    }
+    port.postMessage({ files, failedFiles });
+}
+
+function initializeEPortfolioTransfer() {
+    const bookmark = document.getElementById('eportfolioBookmark');
+    if (!bookmark || !window.isSecureContext || !/^https?:$/.test(window.location?.protocol)) return;
+
+    const appUrl = new URL(window.location.href);
+    const params = new URLSearchParams(appUrl.hash.slice(1));
+    let key;
+    try {
+        const storageKey = 'med-portfolio-eportfolio-bookmark';
+        key = localStorage.getItem(storageKey);
+        if (!/^[a-f0-9]{32}$/.test(key ?? '')) {
+            key = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+            localStorage.setItem(storageKey, key);
+        }
+    } catch {
+        document.getElementById('eportfolioBookmarkNotice').textContent = '請允許這個網頁儲存書籤設定後再使用。';
+        return;
+    }
+
+    appUrl.hash = '';
+    const command = 'void (' + sendEPortfolioForms.toString() + ')(' +
+        JSON.stringify(appUrl.href) + ',' + JSON.stringify(key) + ')';
+    bookmark.href = 'javascript:' + encodeURIComponent(command);
+    bookmark.addEventListener('click', event => event.preventDefault());
+    bookmark.hidden = false;
+    document.getElementById('eportfolioBookmarkNotice').textContent =
+        '把下方連結拖到瀏覽器書籤列。回 e-Portfolio 開啟「表單明細」，再點書籤。';
+
+    if (!params.has('epImport')) return;
+    history.replaceState(null, '', appUrl.href);
+    const status = document.getElementById('eportfolioTransferStatus');
+    const source = params.get('source');
+    const opener = window.opener;
+    if (params.get('epImport') !== key || !/^https?:\/\/[^/]+$/.test(source ?? '') || !opener) {
+        status.textContent = '無法連線。請在這個瀏覽器重新加入書籤，再從 e-Portfolio 開啟。';
+        return;
+    }
+
+    const channel = new MessageChannel();
+    const port = channel.port1;
+    const interrupted = () => {
+        port.close();
+        status.textContent = '接收已中斷。請回 e-Portfolio 確認登入狀態，再點一次書籤。';
+    };
+    let timer = setTimeout(interrupted, 90_000);
+    status.textContent = '已連線，等待 e-Portfolio 讀取表單…';
+    port.onmessage = async ({ data }) => {
+        if (Number.isSafeInteger(data?.processed) && Number.isSafeInteger(data.total)) {
+            clearTimeout(timer);
+            timer = setTimeout(interrupted, 90_000);
+            status.textContent = '正在讀取 e-Portfolio 表單 ' + data.processed + '／' + data.total;
+            return;
+        }
+        if (!Array.isArray(data?.files) || !Array.isArray(data.failedFiles) ||
+            !data.files.every(file => file instanceof File && /\.html$/i.test(file.name)) ||
+            !data.failedFiles.every(name => typeof name === 'string')) return;
+
+        clearTimeout(timer);
+        port.close();
+        status.textContent = '';
+        const summary = (await queuePortfolioImport(() => data.files)) ??
+            { added: 0, duplicates: 0, failedFiles: [] };
+        if (data.failedFiles.length) {
+            showImportStatus({ ...summary, failedFiles: [...data.failedFiles, ...summary.failedFiles] });
+        }
+    };
+    opener.postMessage({ type: 'med-portfolio-ready', key }, source, [channel.port2]);
+}
+
+function isExamQueryCSV(text, fileName) {
+    const [header = '', firstRow = ''] = text.split(/\r?\n/, 2);
+    const headers = header.replace(/^\uFEFF/, '').split(',')
+        .map(cell => cell.trim().replace(/^"|"$/g, ''));
+    const has = label => headers.includes(label);
+
+    // Give the existing assessment layouts priority over exam-file heuristics.
+    if (has('來源檔案') || has('表單標題') ||
+        (has('類型') && (has('評量日期') || has('執行日期') || has('教師/主持人')))) return false;
+
+    if (fileName.includes('測驗查詢') || headers.some(label => /測驗名稱|試卷名稱|應試日期|作答日期|測驗狀態/.test(label))) {
+        return true;
+    }
+
+    // The exam reader is positional, so a renamed file can still be recognized.
+    const columns = firstRow.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+        .map(cell => cell.trim().replace(/^"|"$/g, ''));
+    const looksLikeDate = value => /^\d{4}[-/]\d{1,2}[-/]\d{1,2}(?:\s|T|$)/.test(value || '');
+    return columns.length >= 7 && !looksLikeDate(columns[0]) && looksLikeDate(columns[5]);
+}
+
+function readPortfolioFile(text, fileName) {
+    if (/\.html?$/i.test(fileName)) {
+        const form = htmlFormReader.analyzeHTML(text);
+        return form ? [htmlFormReader.toRecord(form)] : null;
+    }
+    if (isExamQueryCSV(text, fileName)) {
+        const records = htmlFormReader.parseCSV(text).map(htmlFormReader.toRecord);
+        return records.length ? records : null;
+    }
+    return analyzeCSV(text);
+}
+
+async function filesInPortfolioEntry(entry) {
+    if (entry.isFile) {
+        if (!PORTFOLIO_FILE_EXTENSION.test(entry.name)) return [];
+        return [await new Promise((resolve, reject) => entry.file(resolve, reject))];
+    }
+
+    if (!entry.isDirectory) return [];
+    const reader = entry.createReader();
+    const entries = [];
+    for (;;) {
+        const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        if (!batch.length) break;
+        entries.push(...batch);
+    }
+    return (await Promise.all(entries.map(filesInPortfolioEntry))).flat();
+}
+
+async function readPortfolioDrop(transfer) {
+    const items = Array.from(transfer.items || []).filter(item => item.kind === 'file');
+    const fallback = Array.from(transfer.files || []);
+    const entries = items.map(item => item.getAsEntry?.() || item.webkitGetAsEntry?.());
+    if (!entries.some(entry => entry?.isDirectory)) return fallback;
+    // Collect entries and File objects during the drop event, before awaiting any directory reads.
+    const groups = await Promise.all(items.map((item, index) => {
+        if (entries[index]) return filesInPortfolioEntry(entries[index]);
+        const file = item.getAsFile?.();
+        return file ? [file] : [];
+    }));
+    return groups.flat();
+}
+
+function exportPortfolioCSV() {
+    if (!historyData.length) {
+        alert('目前沒有資料可匯出，請先匯入檔案');
+        return;
+    }
+
+    const headers = [
+        '執行日期', '學員姓名', '教師/主持人', '類型', '科別', '表單標題', '總分',
+        'OPA1', 'OPA1回饋', 'OPA2', 'OPA2回饋', 'OPA3', 'OPA3回饋',
+        '表現良好項目', '建議加強項目', '學員回饋意見', '訓練別編號',
+        '儀器別', '各站成績', '操作項目', ...TARGET_MILESTONES, '訓練類別', OTHER_FIELDS_HEADER
+    ];
+    const rows = historyData.map(item => [
+        item.date, item.studentName, item.teacherName, item.type, item.trainingType, item.title, item.scoreRaw,
+        item.opaScores?.[1], item.opaFeedbacks?.[1], item.opaScores?.[2], item.opaFeedbacks?.[2],
+        item.opaScores?.[3], item.opaFeedbacks?.[3], item.feedbackGood, item.feedbackNeeds, item.studentFeedback,
+        item.trainingType, item.instrumentType, item.stationDetails, item.skillName,
+        ...TARGET_MILESTONES.map(label => item.milestoneLevels?.[label]),
+        item.trainingProgram, formatFormFields(item.formFields)
+    ]);
+    // Text starting with = + - @ (or tab/CR) would run as a formula in Excel; prefix it with '.
+    const guard = text => (/^[=+\-@\t\r]/.test(text) && !/^[-+]?\d+(\.\d+)?$/.test(text) ? "'" + text : text);
+    const quote = value => '"' + guard(String(value ?? '')).replace(/"/g, '""') + '"';
+    const csv = [headers, ...rows].map(row => row.map(quote).join(',')).join('\r\n');
+    const names = new Set(historyData.map(item => item.studentName).filter(Boolean));
+    const name = names.size === 1 ? names.values().next().value : '評量資料';
+    const dates = historyData.map(item => item.date).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date || '')).sort();
+    const suffix = dates.length ? '_' + dates[0] + '~' + dates[dates.length - 1] : '';
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob(['\uFEFF', csv], { type: 'text/csv;charset=utf-8;' }));
+    link.download = (name + suffix).replace(/[\/\\:*?"<>|]/g, '_') + '.csv';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
