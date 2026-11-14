@@ -16,7 +16,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <!-- ?v= must match the version shown in the header; change both on every release so browsers load the new files. -->
+    <link rel="stylesheet" href="style.css?v=2.1">
 </head>
 
 <body class="h-screen flex flex-col text-slate-800 bg-slate-50">
@@ -173,8 +174,8 @@
         <p class="import-progress-message" role="status">正在讀取資料並匯入…</p>
     </div>
 
-    <script src="import.js"></script>
-    <script src="app.js"></script>
+    <script src="import.js?v=2.1"></script>
+    <script src="app.js?v=2.1"></script>
 </body>
 
 </html>
