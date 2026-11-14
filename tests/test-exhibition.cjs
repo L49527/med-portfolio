@@ -293,3 +293,11 @@ dupSummary.then(summary => {
 assert.equal(run("seriesRangeLabel('病人照護核心', [1.8, 3, 4], formatLevel)"), '病人照護核心 L1.8 → L4');
 assert.equal(run("seriesRangeLabel('OPA 1', [null, 4], formatOpa)"), 'OPA 1 3a');
 console.log('PASS: trend legends show first and latest values');
+
+// Trend charts use an aligned table legend (name | first → latest) instead of the wrapping canvas legend.
+configs.length = 0; nodes.chartGrid.children.length = 0;
+run('generateExhibitionDashboard({ refreshSelector: false, reportRecords: fixture })');
+const msTrend = chartTitled('Milestone 核心能力歷次趨勢');
+assert.equal(msTrend.config.options.plugins.legend.display, false);
+assert.match(msTrend.card.innerHTML, /class="chart-legend".*醫學影像知識<\/th>\s*<td>L2 → L3.5<\/td>/s);
+console.log('PASS: trend charts use an aligned table legend');
