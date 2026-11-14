@@ -25,11 +25,25 @@ const SERIES_COLORS = ['#115e59', '#2563eb', '#b45309', '#64748b', '#9f1239', '#
     '#4d7c0f', '#6d28d9', '#a16207', '#1e3a8a', '#7c2d12', '#be123c'];
 
 // Legend text for a trend line: "醫學影像知識 L2 → L4", so overlapping lines can still be told apart.
-function seriesRangeLabel(name, values, format) {
+function seriesRange(values, format) {
     const finite = values.filter(Number.isFinite);
-    if (!finite.length) return name;
-    if (finite.length === 1) return `${name} ${format(finite[0])}`;
-    return `${name} ${format(finite[0])} → ${format(finite[finite.length - 1])}`;
+    if (!finite.length) return '';
+    if (finite.length === 1) return format(finite[0]);
+    return `${format(finite[0])} → ${format(finite[finite.length - 1])}`;
+}
+
+function seriesRangeLabel(name, values, format) {
+    const range = seriesRange(values, format);
+    return range ? `${name} ${range}` : name;
+}
+
+// Legend as an aligned table: colour, name, first → latest. It sits beside the chart when there is room
+// and wraps below it on narrow screens.
+function legendTableHtml(datasets) {
+    return `<table class="chart-legend"><tbody>${datasets.map(dataset => `<tr>
+        <td><span class="chart-legend-swatch" style="background:${escapeAssessmentText(dataset.borderColor)}"></span></td>
+        <th scope="row">${escapeAssessmentText(dataset.legendName ?? dataset.label)}</th>
+        <td>${escapeAssessmentText(dataset.legendRange ?? '')}</td></tr>`).join('')}</tbody></table>`;
 }
 
 function attemptColor(index, total) {
@@ -566,6 +580,7 @@ function renderMilestoneCharts(sName, sData) {
             const values = list.map(record => milestoneCoreValues(record)[index]);
             return {
                 label: seriesRangeLabel(name, values, formatLevel),
+                legendName: name, legendRange: seriesRange(values, formatLevel),
                 data: values,
                 borderColor: lineColor, backgroundColor: lineColor,
                 tension: 0.1, pointRadius: 5, spanGaps: true
@@ -573,7 +588,8 @@ function renderMilestoneCharts(sName, sData) {
         });
         createChart(`【${sName}】Milestone 核心能力歷次趨勢${suffix(inst)}`, 'line', attemptLabels([list]), trend,
             { y: { min: 0, max: 5, ticks: { stepSize: 1 } } }, {
-                valueFormat: 'level', labelPoints: 'ends'
+                // Table legend: one competency per line, first → latest levels in their own column.
+                valueFormat: 'level', labelPoints: 'ends', tableLegend: true
             });
     });
 }
@@ -589,12 +605,13 @@ function renderEpaCharts(sName, sData) {
     Object.entries(instGroups).forEach(([inst, list]) => {
         const trend = [1, 2, 3].map(j => ({
             label: seriesRangeLabel(`OPA ${j}`, list.map(record => opaValue(record.opaScores?.[j])), formatOpa),
+            legendName: `OPA ${j}`, legendRange: seriesRange(list.map(record => opaValue(record.opaScores?.[j])), formatOpa),
             data: list.map(record => opaValue(record.opaScores?.[j])),
             borderColor: SERIES_COLORS[j - 1], backgroundColor: SERIES_COLORS[j - 1],
             tension: 0.1, pointRadius: 5, spanGaps: true
         }));
         createChart(`【${sName}】EPA 信賴等級歷次趨勢 - ${inst}`, 'line', attemptLabels([list]), trend, { y: opaAxis }, {
-            valueFormat: 'opa', labelPoints: 'ends'
+            valueFormat: 'opa', labelPoints: 'ends', tableLegend: true
         });
     });
 
@@ -999,11 +1016,11 @@ const valueLabels = {
     }
 };
 
-function createChart(title, type, labels, datasets, scales = {}, { singleScore = false, valueFormat = 'number', labelPoints = 'all', horizontal = false, height = null } = {}) {
+function createChart(title, type, labels, datasets, scales = {}, { singleScore = false, valueFormat = 'number', labelPoints = 'all', horizontal = false, height = null, legendPosition = 'bottom', tableLegend = false } = {}) {
     const id = `chart_${Math.random().toString(36).slice(2, 11)}`;
     const card = document.createElement('div');
     card.className = singleScore ? 'chart-card single-score-chart' : 'chart-card slide-up';
-    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-6 text-center">${escapeAssessmentText(title)}</h3><div class="chart-canvas-wrap w-full"${height ? ` style="height:${Math.round(height)}px"` : ''}><canvas id="${id}"></canvas></div></div>`;
+    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-6 text-center">${escapeAssessmentText(title)}</h3><div class="chart-body${tableLegend ? ' has-legend' : ''}"><div class="chart-canvas-wrap w-full"${height ? ` style="height:${Math.round(height)}px"` : ''}><canvas id="${id}"></canvas></div>${tableLegend ? legendTableHtml(datasets) : ''}</div></div>`;
     document.getElementById('chartGrid').appendChild(card);
     const font = { size: CHART_FONT_SIZE.screen, weight: 'bold' };
     const axes = type === 'radar' ? scales : { x: {}, ...(horizontal ? { y: {} } : {}), ...scales };
@@ -1021,7 +1038,7 @@ function createChart(title, type, labels, datasets, scales = {}, { singleScore =
             layout: { padding: horizontal ? { top: 8, right: 96 } : { top: type === 'radar' ? 4 : 40 } },
             ...(singleScore ? { animation: false } : {}),
             plugins: {
-                legend: { display: !singleScore, position: 'bottom', labels: { font, padding: 12, boxWidth: 14 } },
+                legend: { display: !singleScore && !tableLegend, position: legendPosition, labels: { font, padding: 12, boxWidth: 14 } },
                 tooltip: { titleFont: font, bodyFont: font },
                 valueLabels: { format: valueFormat, fontSize: CHART_FONT_SIZE.screen, labelPoints }
             },
@@ -1055,13 +1072,15 @@ function prepareChartsForPrint() {
         // Labels beside thin horizontal bars stay a little smaller so stacked bars do not touch.
         if (rows && options.plugins?.valueLabels) options.plugins.valueLabels.fontSize = 13;
         const wrap = chart.canvas?.parentElement;
+        // Leave room for a table legend beside the chart on the printed page.
+        const width = wrap?.parentElement?.classList?.contains('has-legend') ? 760 : PRINT_CHART_SIZE.width;
         if (wrap) {
-            wrap.style.width = `${PRINT_CHART_SIZE.width}px`;
+            wrap.style.width = `${width}px`;
             wrap.style.height = `${height}px`;
         }
         chart.stop();
         chart.update('none');
-        chart.resize(PRINT_CHART_SIZE.width, height);
+        chart.resize(width, height);
     });
 }
 
