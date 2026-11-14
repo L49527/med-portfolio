@@ -299,6 +299,15 @@ body {
 .import-details ul { list-style: disc; padding-left: 1.25rem; color: #334155; }
 .import-details li { line-height: 1.6; }
 
+/* Table legend beside (or, when narrow, below) a trend chart */
+.chart-body.has-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.chart-body.has-legend > .chart-canvas-wrap { flex: 1 1 460px; min-width: 0; }
+.chart-legend { flex: 0 0 auto; margin: 0 auto; border-collapse: collapse; font-size: 13px; color: #1e293b; }
+.chart-legend th, .chart-legend td { padding: 3px 6px; text-align: left; white-space: nowrap; }
+.chart-legend th { font-weight: 700; }
+.chart-legend td:last-child { font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+.chart-legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; }
+
 /* Print Mode Styles for Accreditation */
 @media print {
     * {
@@ -398,6 +407,9 @@ body {
     }
 
     /* 圖表在列印前已固定為橫式尺寸（prepareChartsForPrint），這裡只等比例縮放 */
+    .chart-body.has-legend { flex-wrap: nowrap !important; }
+    .chart-legend { font-size: 13pt !important; }
+    .chart-legend-swatch { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .chart-canvas-wrap {
         height: auto !important;
         width: 100% !important;
