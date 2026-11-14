@@ -261,19 +261,43 @@ body {
     color: #991b1b;
 }
 
-#dismissImportStatus {
+.import-status-actions {
     position: absolute;
     inset-inline-end: .75rem;
-    inset-block-start: 50%;
-    transform: translateY(-50%);
+    inset-block-start: .35rem;
+    display: flex;
+    gap: .4rem;
+}
+
+#dismissImportStatus,
+#retryImportButton {
     border-radius: 6px;
     padding: .25rem .55rem;
-    color: #7f1d1d;
+    color: inherit;
     font-weight: 700;
 }
 
-#dismissImportStatus:hover { background: #fff; }
-#dismissImportStatus:focus-visible { outline: 2px solid currentColor; }
+#dismissImportStatus[hidden],
+#retryImportButton[hidden] { display: none; }
+
+#retryImportButton {
+    border: 1px solid currentColor;
+    background: #fff;
+}
+
+#importStatus[data-state] { padding-inline-end: 14rem; }
+
+#dismissImportStatus:hover, #retryImportButton:hover { background: #fff; }
+#dismissImportStatus:focus-visible, #retryImportButton:focus-visible { outline: 2px solid currentColor; }
+
+/* 查看明細 under the import result */
+.import-details { padding: 0 1.5rem .6rem; background: #fff; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+.import-details[hidden] { display: none; }
+.import-details summary { cursor: pointer; padding-top: .5rem; font-weight: 700; color: #0f766e; }
+.import-details-body { display: grid; gap: .75rem; max-height: 40vh; overflow: auto; padding-top: .5rem; }
+.import-details h4 { font-weight: 700; color: #334155; margin-bottom: .25rem; }
+.import-details ul { list-style: disc; padding-left: 1.25rem; color: #334155; }
+.import-details li { line-height: 1.6; }
 
 /* Print Mode Styles for Accreditation */
 @media print {
