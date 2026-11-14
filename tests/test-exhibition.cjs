@@ -241,3 +241,55 @@ assert.ok(chartTitled('EPA 信賴等級歷次趨勢 - CT'));
 assert.ok(chartTitled('EPA 信賴等級歷次趨勢 - MRI'), 'a single attempt still gets a trend chart');
 assert.equal(chartTitled('EPA 各儀器最近一次信賴等級').config.type, 'bar');
 console.log('PASS: report palette and EPA trends');
+
+// 基礎課程 with many long course names: horizontal bars, no empty slots, wrapped labels.
+configs.length = 0; nodes.chartGrid.children.length = 0;
+const courses = ['醫事放射相關法規', '注射對比劑作業流程', '洗手五時機', '醫病關係與溝通技巧', '對比劑安全', '數位影像儲傳系統', '心理支援（如：後疫情之職場心理韌性/復原力）'];
+context.courseFixture = courses.flatMap((name, i) => {
+    const one = { ...base, id: `bc${i}`, type: '筆試成績', title: `基礎課程：${name}`, instrumentType: '基礎課程', date: `2025-08-${String(10 + i).padStart(2, '0')}`, scoreRaw: '100' };
+    return i < 2 ? [{ ...one, id: `bc${i}a`, date: '2025-07-10', scoreRaw: '80' }, one] : [one];
+});
+run('generateExhibitionDashboard({ refreshSelector: false, reportRecords: courseFixture })');
+const course = chartTitled('基礎課程細項成績').config;
+assert.equal(course.options.indexAxis, 'y');
+assert.ok(course.data.datasets.every(ds => ds.skipNull === true));
+assert.ok(course.data.labels.some(label => Array.isArray(label) && label.length === 2), 'long names wrap onto two lines');
+assert.deepEqual(Array.from(course.data.datasets[0].valueLabels[0]), ['80', '07/10']);
+console.log('PASS: basic course chart is horizontal without overlapping labels');
+
+// Import result: duplicates are listed, the result can stay, and failed e-Portfolio forms can be retried.
+const detailsBody = makeNode();
+nodes.importDetails = { ...makeNode(), hidden: true, open: false, querySelector: () => detailsBody };
+nodes.retryImportButton = { ...makeNode(), hidden: true };
+nodes.dismissImportStatus = { ...makeNode(), hidden: true };
+nodes.importStatus = makeNode();
+run(`historyData = []; selectedChartItems.clear(); chartSelectionInitialized = false;`);
+const csvOnce = '執行日期,學員姓名,教師/主持人,類型,表單標題,總分\n2024-07-01,測試學員,老師,DOPS,DOPS-胸腹部-影像醫學科,80';
+const dupSummary = run(`(async () => {
+    await handleFiles([{ name: 'a.csv', text: async () => ${JSON.stringify(csvOnce)} }], { silent: true });
+    return handleFiles([{ name: 'b.csv', text: async () => ${JSON.stringify(csvOnce)} }]);
+})()`);
+dupSummary.then(summary => {
+    assert.equal(summary.duplicates, 1);
+    assert.equal(summary.duplicateRecords[0].title, 'DOPS-胸腹部-影像醫學科');
+    assert.match(detailsBody.innerHTML, /略過的重複表單（1）.*DOPS-胸腹部-影像醫學科（2024-07-01）/s);
+    assert.equal(nodes.importDetails.hidden, false);
+
+    let retried = 0;
+    context.retryFn = () => { retried += 1; };
+    run(`showImportStatus({ added: 9, duplicates: 0, failedFiles: ['表單 3.html', '表單 7.html'], duplicateRecords: [],
+        failedReasons: { '表單 3.html': '讀取逾時（超過 20 秒）' } }, { persist: true, retry: retryFn, retryCount: 2 })`);
+    assert.equal(nodes.retryImportButton.hidden, false);
+    assert.equal(nodes.retryImportButton.textContent, '重試失敗的 2 張');
+    nodes.retryImportButton.onclick();
+    assert.equal(retried, 1);
+    assert.match(detailsBody.innerHTML, /匯入失敗（2）.*表單 3\.html：讀取逾時/s);
+    assert.equal(nodes.dismissImportStatus.hidden, false);
+    assert.equal(run('importStatusTimer'), null, 'a kept result has no auto-hide timer');
+    console.log('PASS: import details, kept result and retry button');
+}).catch(error => { console.error(error); process.exitCode = 1; });
+
+// Trend legends name each series' first and latest value, so lines that overlap can still be told apart.
+assert.equal(run("seriesRangeLabel('病人照護核心', [1.8, 3, 4], formatLevel)"), '病人照護核心 L1.8 → L4');
+assert.equal(run("seriesRangeLabel('OPA 1', [null, 4], formatOpa)"), 'OPA 1 3a');
+console.log('PASS: trend legends show first and latest values');

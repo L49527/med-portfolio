@@ -1037,6 +1037,8 @@ async function sendEPortfolioForms(appUrl, pairingKey) {
             isWindowOpen: 'true', formKey: args[0], fromPage: 'classForm',
             refTable: args[2], refId: args[3]
         });
+        // The same form can be linked more than once (e.g. under two training stages); read it only once.
+        if (forms.some(form => form.url.href === url.href)) continue;
         const name = link.innerText.trim().replace(/[\\/:*?"<>|]/g, '_') || '表單-' + (forms.length + 1);
         forms.push({ url, name: name + '.html' });
     }
@@ -1072,27 +1074,50 @@ async function sendEPortfolioForms(appUrl, pairingKey) {
         return;
     }
 
-    const files = [];
-    const failedFiles = [];
-    for (const { url, name } of forms) {
-        if (receiver.closed) return;
-        port.postMessage({ processed: files.length + failedFiles.length, total: forms.length });
-        try {
-            const response = await fetch(url, { mode: 'same-origin', signal: AbortSignal.timeout(20_000) });
-            if (!response.ok) throw new Error('讀取表單失敗');
-            const html = await response.text();
-            const doc = new DOMParser().parseFromString(html, 'text/html');
-            const isAssessment = Array.from(doc.querySelectorAll('dt')).some(label =>
-                /^訓練(?:類別|計畫)\s*[:：]?$/.test(label.textContent.trim()) &&
-                label.nextElementSibling?.tagName === 'DD');
-            if (!isAssessment) throw new Error('回傳頁面缺少評量表欄位');
-            files.push(new File([html], name, { type: 'text/html' }));
-        } catch {
-            failedFiles.push(name);
+    // Reads the forms at the given positions. Progress includes the failures so far, and the
+    // positions of failed forms are returned so the app can ask for just those again.
+    async function readForms(indexes) {
+        const files = [];
+        const failedFiles = [];
+        const failedIndexes = [];
+        const failedReasons = {};
+        for (const [step, index] of indexes.entries()) {
+            if (receiver.closed) return null;
+            port.postMessage({ processed: step, total: indexes.length, failed: failedIndexes.length });
+            const { url, name } = forms[index];
+            try {
+                const response = await fetch(url, { mode: 'same-origin', signal: AbortSignal.timeout(20_000) });
+                if (!response.ok) throw new Error(`e-Portfolio 回應錯誤（HTTP ${response.status}）`);
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const isAssessment = Array.from(doc.querySelectorAll('dt')).some(label =>
+                    /^訓練(?:類別|計畫)\s*[:：]?$/.test(label.textContent.trim()) &&
+                    label.nextElementSibling?.tagName === 'DD');
+                if (!isAssessment) throw new Error('不是評量表（可能登入已過期）');
+                files.push(new File([html], name, { type: 'text/html' }));
+            } catch (error) {
+                failedFiles.push(name);
+                failedIndexes.push(index);
+                failedReasons[name] = error?.name === 'TimeoutError' ? '讀取逾時（超過 20 秒）'
+                    : error?.message?.startsWith('e-Portfolio') || error?.message?.startsWith('不是評量表') ? error.message
+                    : '無法連線到 e-Portfolio';
+            }
+            if (step < indexes.length - 1) await new Promise(resolve => setTimeout(resolve, 800));
         }
-        if (files.length + failedFiles.length < forms.length) await new Promise(resolve => setTimeout(resolve, 800));
+        return { files, failedFiles, failedIndexes, failedReasons };
     }
-    port.postMessage({ files, failedFiles });
+
+    const first = await readForms(forms.map((_, index) => index));
+    if (!first) return;
+    port.postMessage(first);
+    // Keep listening: the app may ask to retry only the forms that failed.
+    port.onmessage = async ({ data }) => {
+        if (!Array.isArray(data?.retry)) return;
+        const indexes = data.retry.filter(index => Number.isSafeInteger(index) && forms[index]);
+        if (!indexes.length) return;
+        const result = await readForms(indexes);
+        if (result) port.postMessage({ ...result, retried: true });
+    };
 }
 
 function initializeEPortfolioTransfer() {
@@ -1141,11 +1166,13 @@ function initializeEPortfolioTransfer() {
     };
     let timer = setTimeout(interrupted, 90_000);
     status.textContent = '已連線，等待 e-Portfolio 讀取表單…';
+    let retrying = false;
     port.onmessage = async ({ data }) => {
         if (Number.isSafeInteger(data?.processed) && Number.isSafeInteger(data.total)) {
             clearTimeout(timer);
             timer = setTimeout(interrupted, 90_000);
-            status.textContent = '正在讀取 e-Portfolio 表單 ' + data.processed + '／' + data.total;
+            const failed = Number.isSafeInteger(data.failed) ? data.failed : 0;
+            status.textContent = `${retrying ? '正在重試失敗的表單' : '正在讀取 e-Portfolio 表單'} ${data.processed}／${data.total}，失敗 ${failed}`;
             return;
         }
         if (!Array.isArray(data?.files) || !Array.isArray(data.failedFiles) ||
@@ -1153,13 +1180,24 @@ function initializeEPortfolioTransfer() {
             !data.failedFiles.every(name => typeof name === 'string')) return;
 
         clearTimeout(timer);
-        port.close();
         status.textContent = '';
-        const summary = (await queuePortfolioImport(() => data.files)) ??
+        const summary = (await queuePortfolioImport(() => data.files, null, { silent: true })) ??
             { added: 0, duplicates: 0, failedFiles: [] };
-        if (data.failedFiles.length) {
-            showImportStatus({ ...summary, failedFiles: [...data.failedFiles, ...summary.failedFiles] });
-        }
+        const failedIndexes = Array.isArray(data.failedIndexes) ? data.failedIndexes.filter(Number.isSafeInteger) : [];
+        const reasons = data.failedReasons && typeof data.failedReasons === 'object' ? data.failedReasons : {};
+        const failedReasons = { ...summary.failedReasons };
+        data.failedFiles.forEach(name => { failedReasons[name] = typeof reasons[name] === 'string' ? reasons[name] : '讀取失敗'; });
+        const result = { ...summary, failedFiles: [...data.failedFiles, ...summary.failedFiles], failedReasons };
+        // Forms that e-Portfolio could not deliver can be fetched again while its tab is still open.
+        const retry = failedIndexes.length ? () => {
+            retrying = true;
+            clearImportStatus();
+            status.textContent = `正在重試失敗的表單 0／${failedIndexes.length}，失敗 0`;
+            timer = setTimeout(interrupted, 90_000);
+            port.postMessage({ retry: failedIndexes });
+        } : null;
+        if (!retry) port.close();
+        showImportStatus(result, { persist: true, retry, retryCount: failedIndexes.length, retried: Boolean(data.retried) });
     };
     opener.postMessage({ type: 'med-portfolio-ready', key }, source, [channel.port2]);
 }

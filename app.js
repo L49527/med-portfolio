@@ -24,6 +24,14 @@ const ATTEMPT_DARK_HEX = '#115e59';
 const SERIES_COLORS = ['#115e59', '#2563eb', '#b45309', '#64748b', '#9f1239', '#0e7490',
     '#4d7c0f', '#6d28d9', '#a16207', '#1e3a8a', '#7c2d12', '#be123c'];
 
+// Legend text for a trend line: "醫學影像知識 L2 → L4", so overlapping lines can still be told apart.
+function seriesRangeLabel(name, values, format) {
+    const finite = values.filter(Number.isFinite);
+    if (!finite.length) return name;
+    if (finite.length === 1) return `${name} ${format(finite[0])}`;
+    return `${name} ${format(finite[0])} → ${format(finite[finite.length - 1])}`;
+}
+
 function attemptColor(index, total) {
     const t = total <= 1 ? 1 : index / (total - 1);
     const mix = ATTEMPT_LIGHT.map((light, channel) => Math.round(light + (ATTEMPT_DARK[channel] - light) * t));
@@ -129,14 +137,50 @@ function clearImportStatus() {
     status.textContent = '';
     delete status.dataset.state;
     document.getElementById('dismissImportStatus').hidden = true;
+    const retryButton = document.getElementById('retryImportButton');
+    if (retryButton) {
+        retryButton.hidden = true;
+        retryButton.onclick = null;
+    }
+    const details = document.getElementById('importDetails');
+    if (details) {
+        details.hidden = true;
+        details.open = false;
+        const body = details.querySelector?.('.import-details-body');
+        if (body) body.innerHTML = '';
+    }
 }
 
-function showImportStatus(summary) {
+// 「查看明細」: which records were skipped as duplicates and why each failed file failed.
+function renderImportDetails(summary) {
+    const details = document.getElementById('importDetails');
+    const body = details?.querySelector?.('.import-details-body');
+    if (!details || !body) return;
+    const duplicates = summary.duplicateRecords || [];
+    const failed = summary.failedFiles || [];
+    if (!duplicates.length && !failed.length) return;
+    const section = (title, items) => items.length
+        ? `<section><h4>${escapeAssessmentText(title)}（${items.length}）</h4><ul>${items.map(item => `<li>${escapeAssessmentText(item)}</li>`).join('')}</ul></section>`
+        : '';
+    body.innerHTML = section('略過的重複表單', duplicates.map(record => `${record.title}（${record.date}）`)) +
+        section('匯入失敗', failed.map(name => `${name}：${summary.failedReasons?.[name] || '無法匯入'}`));
+    details.hidden = false;
+}
+
+// persist: keep the result until 關閉 is pressed. retry: offers 「重試失敗的 N 張」 for e-Portfolio imports.
+function showImportStatus(summary, { persist = false, retry = null, retryCount = 0, retried = false } = {}) {
     clearImportStatus();
     const status = document.getElementById('importStatus');
-    status.textContent = formatImportSummary(summary);
+    status.textContent = (retried ? '重試結果：' : '') + formatImportSummary(summary);
     status.dataset.state = getImportSummaryState(summary);
-    if (summary.failedFiles.length) {
+    const retryButton = document.getElementById('retryImportButton');
+    if (retry && retryButton) {
+        retryButton.textContent = `重試失敗的 ${retryCount} 張`;
+        retryButton.onclick = retry;
+        retryButton.hidden = false;
+    }
+    renderImportDetails(summary);
+    if (summary.failedFiles.length || persist) {
         document.getElementById('dismissImportStatus').hidden = false;
     } else {
         importStatusTimer = setTimeout(clearImportStatus, 4000);
@@ -519,9 +563,10 @@ function renderMilestoneCharts(sName, sData) {
         if (list.length < 2) return;
         const trend = CORE_COMPETENCIES.map((name, index) => {
             const lineColor = SERIES_COLORS[index % SERIES_COLORS.length];
+            const values = list.map(record => milestoneCoreValues(record)[index]);
             return {
-                label: name,
-                data: list.map(record => milestoneCoreValues(record)[index]),
+                label: seriesRangeLabel(name, values, formatLevel),
+                data: values,
                 borderColor: lineColor, backgroundColor: lineColor,
                 tension: 0.1, pointRadius: 5, spanGaps: true
             };
@@ -543,7 +588,7 @@ function renderEpaCharts(sName, sData) {
     // One trend chart per instrument (OPA 1–3 over the attempts), then the latest level of each instrument.
     Object.entries(instGroups).forEach(([inst, list]) => {
         const trend = [1, 2, 3].map(j => ({
-            label: `OPA ${j}`,
+            label: seriesRangeLabel(`OPA ${j}`, list.map(record => opaValue(record.opaScores?.[j])), formatOpa),
             data: list.map(record => opaValue(record.opaScores?.[j])),
             borderColor: SERIES_COLORS[j - 1], backgroundColor: SERIES_COLORS[j - 1],
             tension: 0.1, pointRadius: 5, spanGaps: true
@@ -572,8 +617,10 @@ function renderAttemptBarChart(title, groups, { min = 60 } = {}) {
     const names = Object.keys(groups);
     if (!names.length) return;
     const maxAttempts = Math.max(...Object.values(groups).map(list => list.length));
-    // Score and date fit above up to three bars per group; with more bars only the score is shown.
-    const withDates = maxAttempts <= 3;
+    // Many items or long names (e.g. 基礎課程) read better as horizontal bars, with "score date" beside each bar.
+    const horizontal = names.length > 6 || names.some(name => name.length > 10);
+    // Vertically, score and date fit above up to three bars per group; with more bars only the score is shown.
+    const withDates = horizontal || maxAttempts <= 3;
     const datasets = Array.from({ length: maxAttempts }, (_, index) => {
         const color = attemptColor(index, maxAttempts);
         const latest = index === maxAttempts - 1;
@@ -583,11 +630,21 @@ function renderAttemptBarChart(title, groups, { min = 60 } = {}) {
             data: items.map(record => (record ? scoreOrNull(record.scoreRaw) : null)),
             ...(withDates ? { valueLabels: scorePointLabels(items) } : {}),
             backgroundColor: color, borderColor: latest && maxAttempts > 1 ? LATEST_BORDER : color,
-            borderWidth: latest && maxAttempts > 1 ? 2 : 1, borderRadius: 6, maxBarThickness: 30
+            borderWidth: latest && maxAttempts > 1 ? 2 : 1, borderRadius: 6, maxBarThickness: 30,
+            // An item assessed fewer times keeps its bars centred instead of leaving empty slots.
+            skipNull: true
         };
     });
-    createChart(title, 'bar', names, datasets, { y: { min, max: 100 } }, {
-    });
+    if (horizontal) {
+        // Same bar thickness whether an item was assessed once or several times.
+        datasets.forEach(dataset => { dataset.maxBarThickness = 14; dataset.borderRadius = 4; });
+        const labels = names.map(name => wrapLabel(name, 16, 2));
+        createChart(title, 'bar', labels, datasets, { x: { min, max: 100 }, y: { ticks: { autoSkip: false } } }, {
+            horizontal: true, height: Math.max(400, names.length * (24 + 14 * maxAttempts))
+        });
+        return;
+    }
+    createChart(title, 'bar', names, datasets, { y: { min, max: 100 } });
 }
 
 function renderDopsCharts(sName, sData) {
@@ -886,6 +943,11 @@ const valueLabels = {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         ctx.fillStyle = '#0f172a';
+        // For 'ends' line labels: one label per spot. A value already labelled nearby at the same attempt is
+        // skipped (the legend lists every series' first and latest value), and first-attempt labels sit to
+        // the right of the point so they do not cover the axis numbers.
+        const placed = new Map();
+        const endLabels = options.labelPoints === 'ends' && !isBar;
         chart.data.datasets.forEach((dataset, datasetIndex) => {
             if (!chart.isDatasetVisible(datasetIndex)) return;
             const valid = dataset.data.map((value, index) => (Number.isFinite(value) ? index : -1)).filter(index => index >= 0);
@@ -906,6 +968,22 @@ const valueLabels = {
                     ctx.fillText(lines.join(' '), point.x + 6, point.y);
                     return;
                 }
+                if (endLabels) {
+                    const taken = placed.get(index) || [];
+                    if (taken.some(y => Math.abs(y - point.y) < size + 4)) return;
+                    placed.set(index, [...taken, point.y]);
+                    ctx.font = `700 ${size}px ${CHART_FONT_FAMILY}`;
+                    if (index === valid[0] && index === 0) {
+                        ctx.textAlign = 'left';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(lines[0], point.x + 10, point.y);
+                    } else {
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText(lines[0], point.x, point.y - 8);
+                    }
+                    return;
+                }
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
                 let y = isBar ? Math.min(point.y, point.base) - 4 : point.y - 8;
@@ -921,11 +999,11 @@ const valueLabels = {
     }
 };
 
-function createChart(title, type, labels, datasets, scales = {}, { singleScore = false, valueFormat = 'number', labelPoints = 'all', horizontal = false } = {}) {
+function createChart(title, type, labels, datasets, scales = {}, { singleScore = false, valueFormat = 'number', labelPoints = 'all', horizontal = false, height = null } = {}) {
     const id = `chart_${Math.random().toString(36).slice(2, 11)}`;
     const card = document.createElement('div');
     card.className = singleScore ? 'chart-card single-score-chart' : 'chart-card slide-up';
-    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-6 text-center">${escapeAssessmentText(title)}</h3><div class="chart-canvas-wrap w-full"><canvas id="${id}"></canvas></div></div>`;
+    card.innerHTML = `<div class="chart-card-inner"><h3 class="adaptive-title text-slate-800 mb-6 text-center">${escapeAssessmentText(title)}</h3><div class="chart-canvas-wrap w-full"${height ? ` style="height:${Math.round(height)}px"` : ''}><canvas id="${id}"></canvas></div></div>`;
     document.getElementById('chartGrid').appendChild(card);
     const font = { size: CHART_FONT_SIZE.screen, weight: 'bold' };
     const axes = type === 'radar' ? scales : { x: {}, ...(horizontal ? { y: {} } : {}), ...scales };
@@ -940,7 +1018,7 @@ function createChart(title, type, labels, datasets, scales = {}, { singleScore =
             devicePixelRatio: 2,
             barPercentage: 0.5, // 讓長條圖變細
             categoryPercentage: 0.8,
-            layout: { padding: horizontal ? { top: 8, right: 60 } : { top: type === 'radar' ? 4 : 40 } },
+            layout: { padding: horizontal ? { top: 8, right: 96 } : { top: type === 'radar' ? 4 : 40 } },
             ...(singleScore ? { animation: false } : {}),
             plugins: {
                 legend: { display: !singleScore, position: 'bottom', labels: { font, padding: 12, boxWidth: 14 } },
@@ -971,8 +1049,11 @@ function prepareChartsForPrint() {
         });
         // Chart.js caps the size at its container, which is a half-width column on screen.
         // Horizontal charts get a little more height per bar so wrapped names do not overlap.
-        const bars = options.indexAxis === 'y' ? chart.data.labels.length : 0;
-        const height = Math.max(PRINT_CHART_SIZE.height, Math.min(560, bars * 52));
+        const rows = options.indexAxis === 'y' ? chart.data.labels.length : 0;
+        const barsPerRow = Math.max(1, chart.data.datasets.length);
+        const height = Math.max(PRINT_CHART_SIZE.height, Math.min(600, rows * (24 + 20 * barsPerRow)));
+        // Labels beside thin horizontal bars stay a little smaller so stacked bars do not touch.
+        if (rows && options.plugins?.valueLabels) options.plugins.valueLabels.fontSize = 13;
         const wrap = chart.canvas?.parentElement;
         if (wrap) {
             wrap.style.width = `${PRINT_CHART_SIZE.width}px`;
@@ -1255,7 +1336,7 @@ const fileInput = document.getElementById('fileInput');
 const folderImportInput = document.getElementById('folderImportInput');
 let pendingImport = Promise.resolve();
 
-function queuePortfolioImport(collectFiles, emptyLabel) {
+function queuePortfolioImport(collectFiles, emptyLabel, options = {}) {
     // Start collecting immediately while the picker or drop still exposes the files.
     const filesReady = Promise.resolve(collectFiles()).then(files => ({ files }), error => ({ error }));
     pendingImport = pendingImport.catch(console.error).then(async () => {
@@ -1265,7 +1346,7 @@ function queuePortfolioImport(collectFiles, emptyLabel) {
             showImportStatus({ added: 0, duplicates: 0, failedFiles: [emptyLabel || '拖放的檔案'] });
             return;
         }
-        return handleFiles(files);
+        return handleFiles(files, options);
     });
     return pendingImport;
 }
@@ -1320,9 +1401,10 @@ folderImportInput?.addEventListener('change', () => {
 folderImportInput?.addEventListener('cancel', () => { folderImportInput.dataset.replace = ''; });
 initializeEPortfolioTransfer();
 
-async function handleFiles(files) {
+// silent: the caller shows the result itself (the e-Portfolio import adds its own failures and retry).
+async function handleFiles(files, { silent = false } = {}) {
     if (!files || files.length === 0) return;
-    const summary = { added: 0, duplicates: 0, failedFiles: [] };
+    const summary = { added: 0, duplicates: 0, failedFiles: [], duplicateRecords: [], failedReasons: {} };
     const knownContent = new Set(historyData.map(getRecordContentKey));
     const usedIds = new Set(historyData.map(item => item && item.id).filter(id => id !== undefined && id !== null));
     const overlay = typeof document !== 'undefined' ? document.getElementById('progressOverlay') : null;
@@ -1343,6 +1425,7 @@ async function handleFiles(files) {
                     const contentKey = getRecordContentKey(record);
                     if (knownContent.has(contentKey)) {
                         summary.duplicates += 1;
+                        summary.duplicateRecords.push({ title: record.title, date: record.date, type: record.type });
                         return;
                     }
 
@@ -1360,6 +1443,7 @@ async function handleFiles(files) {
             } catch (error) {
                 console.error(`匯入失敗（${fileName}）:`, error);
                 summary.failedFiles.push(fileName);
+                summary.failedReasons[fileName] = error?.message === '僅支援 HTML 或 CSV 檔案' ? error.message : '無法解析檔案內容';
             }
         }
     } finally {
@@ -1369,7 +1453,7 @@ async function handleFiles(files) {
 
     updateFilterOptions();
     switchView('card');
-    showImportStatus(summary);
+    if (!silent) showImportStatus(summary);
     return summary;
 }
 

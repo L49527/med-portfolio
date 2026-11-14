@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>評量展示助手 v2.0</title>
+    <title>評量展示助手 v2.1</title>
 
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="logo.png">
@@ -26,7 +26,7 @@
             <img src="logo.png" alt="輔大醫院" class="h-12">
             <div>
                 <h1 class="text-lg font-semibold text-slate-800 leading-tight">輔仁大學附設醫院 <span
-                        class="text-teal-600">評量展示助手</span> <span class="app-version">v2.0</span></h1>
+                        class="text-teal-600">評量展示助手</span> <span class="app-version">v2.1</span></h1>
                 <p class="text-[10px] text-slate-500">Fu Jen Catholic University Hospital | Medical Education Assessment</p>
             </div>
         </div>
@@ -101,7 +101,14 @@
 
             <div class="import-status-row">
                 <p id="importStatus" role="status" aria-atomic="true"></p>
-                <button type="button" id="dismissImportStatus" onclick="clearImportStatus()" hidden>關閉</button>
+                <div class="import-status-actions">
+                    <button type="button" id="retryImportButton" hidden>重試失敗的表單</button>
+                    <button type="button" id="dismissImportStatus" onclick="clearImportStatus()" hidden>關閉</button>
+                </div>
+                <details id="importDetails" class="import-details" hidden>
+                    <summary>查看明細</summary>
+                    <div class="import-details-body"></div>
+                </details>
             </div>
             <p id="eportfolioTransferStatus" class="empty:hidden bg-teal-50 px-6 py-2 text-sm font-bold text-teal-800" role="status"></p>
 
